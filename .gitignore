@@ -7,10 +7,13 @@ coverage/
 .env*
 !.env.example
 
-# Android / Capacitor build artifacts
+# Android / Capacitor generated project & build artifacts
+/android/
 android/local.properties
 android/.gradle/
 android/build/
 android/app/build/
 android/app/src/main/assets/public/
 *.keystore
+!android-keystore/*.keystore
+

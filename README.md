@@ -4,14 +4,11 @@ A 100% free, ad-free, privacy-first Quran audio player and reader built for stud
 
 ## Download APK
 
-Pre-built Android APKs (`minSdk 24` / Android 7.0+) can be downloaded from CI or built locally:
+Every push to `main` automatically builds and signs the Android APK in the cloud via GitHub Actions:
 
-1. **GitHub Actions CI**: Every push triggers the **Build Android APK** workflow (`.github/workflows/build-apk.yml`) using Node 20, Java 21, and the Android SDK, uploading the **`Quranfy-APK`** artifact (`Quranfy.apk`) under the **Actions** tab.
-2. **Local APK Output**: Building locally copies the APK to `./Quranfy.apk` and `./release/Quranfy.apk`.
-3. **Installing on Android**:
-   - Download `Quranfy.apk` from the latest **Quranfy-APK** workflow artifact (or copy your locally built APK to your phone).
-   - Tap the file and allow **Install unknown apps** if prompted.
-   - All features—Quran reader & Tafsir, 7 Hadith books, Prayer & Qibla, Adhkar, Hifz, Khatam tracker, self-hosted Arabic/Bangla/Latin fonts, and offline nature ambient sound loops—are unlocked 100% free with no ads, accounts, or subscriptions.
+- **Latest APK (`apk/` folder)**: [`apk/Quranfy.apk`](./apk/Quranfy.apk) ([browse all builds in `apk/`](./apk/))
+- **GitHub Releases (Direct Download)**: [`Quranfy.apk` (Latest Release)](../../releases/latest/download/Quranfy.apk) · [All Releases](../../releases)
+- **Install**: Allow unknown sources, open `Quranfy.apk` (Android 7.0 / API 24+). Future signed updates install cleanly over the previous version.
 
 ---
 
@@ -25,73 +22,3 @@ Pre-built Android APKs (`minSdk 24` / Android 7.0+) can be downloaded from CI or
 - **Hadith, Adhkar, Prayer & Hifz**: Offline-cached 7 Hadith collections with calm Reading Mode, Adhkar tap counters, offline Prayer times & Qibla compass (`adhan`), progressive-masking Hifz mode, Khatam tracker, and JSON backup/restore.
 - **Offline Downloads**: Chunk-streamed to `@capacitor/filesystem` on Android (with IndexedDB fallback on web) with storage readout and delete controls.
 - **Trilingual UI (English, Arabic RTL, বাংলা)** with Light, Dark, and Auto themes.
-
----
-
-## Running Locally (Web / PWA)
-
-```bash
-npm install
-npm run dev
-```
-
-Build production bundle:
-
-```bash
-npm run build
-```
-
----
-
-## Building the Android APK with Capacitor
-
-### Prerequisites
-
-- **Node.js 20+**
-- **JDK 21** & **Android SDK** (`minSdk 24`, `compileSdk 36`, `targetSdk 36`)
-
-### 1. Build Web Assets & Sync Android
-
-```bash
-npm install
-npm run build
-npx cap sync android
-```
-
-Verify `android/local.properties` points to your machine's Android SDK (it is git-ignored and will not be committed):
-
-```properties
-sdk.dir=/path/to/your/Android/Sdk
-```
-
-All bundled fonts (`dist/assets/*.woff2`) and offline CC0 loops (`public/sounds/`) are synced into `android/app/src/main/assets/public/`.
-
-### 2. Build the Debug APK via Gradle
-
-```bash
-cd android
-./gradlew assembleDebug
-```
-
-Copy the resulting APK to the project root and `/release/Quranfy.apk`:
-
-```bash
-cd ..
-cp android/app/build/outputs/apk/debug/app-debug.apk Quranfy.apk
-mkdir -p release && cp android/app/build/outputs/apk/debug/app-debug.apk release/Quranfy.apk
-```
-
-### 3. Signing & Building a Release APK
-
-1. Generate a release keystore (keep this file and passwords safe):
-
-```bash
-keytool -genkey -v -keystore quranfy-release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias quranfy
-```
-
-2. In Android Studio (`npx cap open android`), open **Build > Generate Signed Bundle / APK...** or configure `signingConfigs.release` in `android/app/build.gradle` and run:
-
-```bash
-cd android
-./gradlew assembleRelease
-```
