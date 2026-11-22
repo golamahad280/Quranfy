@@ -3,13 +3,17 @@ import {
   BookText,
   Briefcase,
   ChevronRight,
+  Clock,
   GraduationCap,
   Heart,
+  Layers,
   ListMusic,
   Moon,
   Pause,
   Play,
   SlidersHorizontal,
+  Sparkles,
+  Target,
   UserCheck,
 } from 'lucide-react';
 import React, {useEffect, useMemo, useState} from 'react';
@@ -44,19 +48,18 @@ export const HomeScreen: React.FC = () => {
   const isPlaying = useQuranStore((s) => s.isPlaying);
   const resumePositionSec = useQuranStore((s) => s.resumePositionSec);
   const recentlyPlayed = useQuranStore((s) => s.recentlyPlayed);
-  const favoriteSurahNumbers = useQuranStore((s) => s.favoriteSurahNumbers);
   const favoriteReciterIds = useQuranStore((s) => s.favoriteReciterIds);
   const ambientMix = useQuranStore((s) => s.ambientMix);
+  const khatamState = useQuranStore((s) => s.khatamState);
   const lang = useQuranStore((s) => s.settings.language);
 
   const openReader = useQuranStore((s) => s.openReader);
   const setActiveTab = useQuranStore((s) => s.setActiveTab);
-  const toggleFavoriteSurah = useQuranStore((s) => s.toggleFavoriteSurah);
+  const openMoreSection = useQuranStore((s) => s.openMoreSection);
   const toggleFavoriteReciter = useQuranStore((s) => s.toggleFavoriteReciter);
   const setQueueAndPlay = useQuranStore((s) => s.setQueueAndPlay);
   const setAmbientSheetOpen = useQuranStore((s) => s.setAmbientSheetOpen);
 
-  const [surahFilter, setSurahFilter] = useState<'all' | 'meccan' | 'medinan' | 'short'>('all');
   const [hadithOfDay, setHadithOfDay] = useState<HadithOfDayResult | null>(null);
 
   useEffect(() => {
@@ -88,16 +91,10 @@ export const HomeScreen: React.FC = () => {
     return [...recommended, ...others];
   }, [reciters, focusMode]);
 
-  const filteredSurahs = useMemo(() => {
-    if (surahFilter === 'meccan') return surahs.filter((s) => s.revelationType === 'Meccan');
-    if (surahFilter === 'medinan') return surahs.filter((s) => s.revelationType === 'Medinan');
-    if (surahFilter === 'short') return surahs.filter((s) => s.numberOfAyahs <= 20);
-    return surahs;
-  }, [surahs, surahFilter]);
-
   const resumeSurah = surahs.find((s) => s.number === currentSurahNumber) || surahs[0];
   const resumeReciter = reciters.find((r) => r.id === currentReciterId) || reciters[0];
   const activeModeMeta = MODE_META.find((m) => m.id === focusMode) || MODE_META[0];
+  const khatamPct = Math.min(100, Math.round((khatamState.pagesCompleted / 604) * 100));
 
   const ambientButtonLabel =
     activeAmbient.length === 1
@@ -151,7 +148,7 @@ export const HomeScreen: React.FC = () => {
           })}
         </div>
 
-        {/* Mode Feature Card + Resume Card Grid on Desktop */}
+        {/* Mode Feature Card + Resume Card Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
           <div className="lg:col-span-7 relative rounded-3xl overflow-hidden min-h-[192px] bg-brand-950 text-white shadow-lg border border-white/15 flex flex-col justify-end p-5">
             <img
@@ -186,12 +183,11 @@ export const HomeScreen: React.FC = () => {
                 className="md-ripple inline-flex items-center justify-center gap-2 px-5 min-h-[48px] rounded-2xl bg-accent text-brand-950 text-xs font-bold whitespace-nowrap shrink-0 shadow-md"
               >
                 <Play className="w-4 h-4 fill-current" />
-                <span>{lang === 'ar' ? 'ابدأ الجلسة' : 'Start Session'}</span>
+                <span>{pickLang(lang, 'Start Session', 'ابدأ الجلسة', 'সেশন শুরু করুন')}</span>
               </button>
             </div>
           </div>
 
-          {/* Resume Listening Glass Card */}
           <div className="lg:col-span-5 rounded-3xl glass-strong p-5 flex flex-col justify-between">
             <div>
               <p className="text-xs font-semibold text-brand-600 dark:text-accent">
@@ -231,7 +227,11 @@ export const HomeScreen: React.FC = () => {
                 ) : (
                   <Play className="w-4 h-4 fill-current" />
                 )}
-                <span>{isPlaying ? (lang === 'ar' ? 'إيقاف مؤقت' : 'Pause') : t.home.listenNow}</span>
+                <span>
+                  {isPlaying
+                    ? pickLang(lang, 'Pause', 'إيقاف مؤقت', 'বিরতি')
+                    : t.home.listenNow}
+                </span>
               </button>
 
               <button
@@ -244,6 +244,97 @@ export const HomeScreen: React.FC = () => {
               </button>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* Compact Daily Tools & Trackers Row */}
+      <section aria-labelledby="quick-tools-heading">
+        <div className="flex items-center justify-between mb-3">
+          <h2 id="quick-tools-heading" className="text-lg font-bold text-ink dark:text-ink-dark">
+            {t.home.quickTools}
+          </h2>
+          <button
+            type="button"
+            onClick={() => setActiveTab('quran')}
+            className="text-xs font-semibold text-brand-700 dark:text-accent min-h-[36px] flex items-center gap-1"
+          >
+            <span>{t.quranTab.title}</span>
+            <ChevronRight className="w-4 h-4 rtl:rotate-180" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <button
+            type="button"
+            onClick={() => openMoreSection('prayer')}
+            className="md-ripple rounded-3xl glass p-4 text-start flex items-center gap-3 min-h-[76px]"
+          >
+            <div className="w-11 h-11 rounded-2xl bg-brand-600/14 dark:bg-accent/18 text-brand-700 dark:text-accent flex items-center justify-center shrink-0">
+              <Clock className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-ink dark:text-ink-dark truncate">
+                {t.more.prayerTitle}
+              </p>
+              <p className="text-[11px] text-muted dark:text-muted-dark truncate">
+                {pickLang(lang, 'Times & Qibla', 'المواقيت والقبلة', 'সময় ও কিবলা')}
+              </p>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => openMoreSection('adhkar')}
+            className="md-ripple rounded-3xl glass p-4 text-start flex items-center gap-3 min-h-[76px]"
+          >
+            <div className="w-11 h-11 rounded-2xl bg-brand-600/14 dark:bg-accent/18 text-brand-700 dark:text-accent flex items-center justify-center shrink-0">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-ink dark:text-ink-dark truncate">
+                {t.more.adhkarTitle}
+              </p>
+              <p className="text-[11px] text-muted dark:text-muted-dark truncate">
+                {pickLang(lang, 'Morning · Evening', 'الصباح والمساء', 'সকাল ও সন্ধ্যা')}
+              </p>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => openMoreSection('hifz')}
+            className="md-ripple rounded-3xl glass p-4 text-start flex items-center gap-3 min-h-[76px]"
+          >
+            <div className="w-11 h-11 rounded-2xl bg-brand-600/14 dark:bg-accent/18 text-brand-700 dark:text-accent flex items-center justify-center shrink-0">
+              <Layers className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-ink dark:text-ink-dark truncate">
+                {t.more.hifzTitle}
+              </p>
+              <p className="text-[11px] text-muted dark:text-muted-dark truncate">
+                {pickLang(lang, 'Memorize & Loop', 'حفظ وتكرار', 'মুখস্থ মোড')}
+              </p>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => openMoreSection('khatam')}
+            className="md-ripple rounded-3xl glass p-4 text-start flex items-center gap-3 min-h-[76px]"
+          >
+            <div className="w-11 h-11 rounded-2xl bg-brand-600/14 dark:bg-accent/18 text-brand-700 dark:text-accent flex items-center justify-center shrink-0">
+              <Target className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-ink dark:text-ink-dark truncate">
+                {t.more.khatamTitle}
+              </p>
+              <p className="text-[11px] text-muted dark:text-muted-dark truncate tabular-nums">
+                {khatamState.pagesCompleted}/604 ({khatamPct}%)
+              </p>
+            </div>
+          </button>
         </div>
       </section>
 
@@ -461,122 +552,7 @@ export const HomeScreen: React.FC = () => {
           </div>
         </section>
       )}
-
-      {/* All 114 Surahs */}
-      <section aria-labelledby="all-surahs-heading">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-          <h2 id="all-surahs-heading" className="text-lg font-bold text-ink dark:text-ink-dark">
-            {t.home.allSurahs}
-          </h2>
-
-          <div className="flex items-center gap-1 p-1 rounded-2xl glass">
-            {(
-              [
-                {id: 'all', en: 'All', ar: 'الكل', bn: 'সব'},
-                {id: 'meccan', en: 'Meccan', ar: 'مكية', bn: 'মক্কী'},
-                {id: 'medinan', en: 'Medinan', ar: 'مدنية', bn: 'মাদানী'},
-                {id: 'short', en: 'Short', ar: 'قصار', bn: 'ছোট'},
-              ] as const
-            ).map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setSurahFilter(tab.id)}
-                className={`px-3 min-h-[38px] rounded-xl text-xs font-semibold whitespace-nowrap transition-colors ${
-                  surahFilter === tab.id
-                    ? 'bg-brand-600 text-white dark:bg-accent dark:text-brand-950 shadow-sm'
-                    : 'text-muted dark:text-muted-dark'
-                }`}
-              >
-                {pickLang(lang, tab.en, tab.ar, tab.bn)}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          {filteredSurahs.map((s) => {
-            const isCurrent = currentSurahNumber === s.number;
-            const isFav = favoriteSurahNumbers.includes(s.number);
-            return (
-              <div
-                key={s.number}
-                className={`rounded-3xl p-4 flex items-center justify-between gap-2 transition-colors border ${
-                  isCurrent
-                    ? 'bg-brand-600/12 dark:bg-accent/14 border-brand-500/45 dark:border-accent/45 shadow-md'
-                    : 'glass'
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => openReader(s.number)}
-                  className="flex-1 min-w-0 flex items-center gap-3 text-start min-h-[48px]"
-                >
-                  <div
-                    className={`w-11 h-11 rounded-2xl flex items-center justify-center text-xs font-bold tabular-nums shrink-0 ${
-                      isCurrent
-                        ? 'bg-brand-600 text-white dark:bg-accent dark:text-brand-950'
-                        : 'bg-brand-600/14 dark:bg-white/10 text-brand-700 dark:text-accent'
-                    }`}
-                  >
-                    {s.number}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-semibold text-ink dark:text-ink-dark truncate">
-                        {s.englishName}
-                      </span>
-                      <span
-                        className="font-quran-amiri text-base text-brand-700 dark:text-accent shrink-0"
-                        dir="rtl"
-                      >
-                        {s.name}
-                      </span>
-                    </div>
-                    <p className="text-xs text-muted dark:text-muted-dark truncate">
-                      {s.englishNameTranslation} · {s.numberOfAyahs} {t.home.ayahs}
-                    </p>
-                  </div>
-                </button>
-
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => toggleFavoriteSurah(s.number)}
-                    aria-label={`Favorite ${s.englishName}`}
-                    className="min-h-[48px] min-w-[44px] flex items-center justify-center rounded-2xl hover:bg-brand-500/10 dark:hover:bg-white/10"
-                  >
-                    <Heart
-                      className={`w-4 h-4 ${
-                        isFav ? 'fill-accent text-accent' : 'text-muted dark:text-muted-dark'
-                      }`}
-                    />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (isCurrent && isPlaying) {
-                        audioManager.pause();
-                      } else {
-                        audioManager.playSurah(s.number, currentReciterId, 0);
-                      }
-                    }}
-                    aria-label={`Play ${s.englishName}`}
-                    className="md-ripple min-h-[48px] min-w-[48px] flex items-center justify-center rounded-2xl bg-brand-600/14 dark:bg-white/10 text-brand-700 dark:text-accent"
-                  >
-                    {isCurrent && isPlaying ? (
-                      <Pause className="w-4 h-4 fill-current" />
-                    ) : (
-                      <Play className="w-4 h-4 fill-current ms-0.5" />
-                    )}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
     </div>
   );
 };
+export default HomeScreen;

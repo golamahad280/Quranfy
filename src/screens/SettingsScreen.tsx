@@ -1,5 +1,16 @@
-import {BookOpen, Info, Mail, ShieldCheck, Sparkles, Trash2, X} from 'lucide-react';
-import React, {useEffect, useMemo, useState} from 'react';
+import {
+  BookOpen,
+  Download,
+  Info,
+  Mail,
+  ShieldCheck,
+  Sparkles,
+  Trash2,
+  Upload,
+  Volume2,
+  X,
+} from 'lucide-react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {PWAInstallButton} from '../components/PWAInstallButton';
 import {APP_VERSION, pickLang, TRANSLATIONS} from '../data/i18n';
 import {TRANSLATION_OPTIONS} from '../data/recitersAndPlaylists';
@@ -9,7 +20,7 @@ import {
   groupTafsirsByLanguage,
   resolvePreferredTafsirId,
 } from '../services/tafsirApi';
-import {useQuranStore} from '../store/useQuranStore';
+import {getTodayDateKey, useQuranStore} from '../store/useQuranStore';
 import {TafsirResource} from '../types/quran';
 
 interface SettingsScreenProps {
@@ -22,10 +33,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({onOpenWhatsNew}) 
   const updateSettings = useQuranStore((s) => s.updateSettings);
   const resetOnboarding = useQuranStore((s) => s.resetOnboarding);
   const setDownloadedKeys = useQuranStore((s) => s.setDownloadedKeys);
+  const exportBackupJson = useQuranStore((s) => s.exportBackupJson);
+  const importBackupJson = useQuranStore((s) => s.importBackupJson);
   const showToast = useQuranStore((s) => s.showToast);
 
   const [infoModal, setInfoModal] = useState<'about' | 'contact' | 'privacy' | null>(null);
   const [tafsirs, setTafsirs] = useState<TafsirResource[]>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const lang = settings.language;
   const t = TRANSLATIONS[lang];
@@ -54,11 +68,41 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({onOpenWhatsNew}) 
     showToast(t.settings.cacheCleared);
   };
 
+  const handleExportBackup = () => {
+    const json = exportBackupJson();
+    const blob = new Blob([json], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `quranfy-backup-${getTodayDateKey()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(pickLang(lang, 'Backup exported as JSON', 'تم تصدير النسخة الاحتياطية', 'ব্যাকআপ ডাউনলোড হয়েছে'));
+  };
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const res = importBackupJson(text);
+      if (res.ok) {
+        showToast(
+          pickLang(lang, 'Backup restored successfully', 'تمت استعادة البيانات بنجاح', 'ব্যাকআপ সফলভাবে পুনরুদ্ধার হয়েছে')
+        );
+      } else {
+        showToast(res.error || 'Invalid backup file');
+      }
+    } catch {
+      showToast('Failed to read backup file');
+    }
+  };
+
   return (
     <div className="space-y-6 pb-8 max-w-3xl">
       <h2 className="text-lg font-bold text-ink dark:text-ink-dark">{t.settings.title}</h2>
 
-      {/* Install PWA Card */}
       <PWAInstallButton />
 
       {/* Appearance & Language */}
@@ -186,7 +230,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({onOpenWhatsNew}) 
           </div>
         </div>
 
-        {/* Bangla Quran translation toggle */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
           <label className="flex items-center gap-2.5 text-xs sm:text-sm font-medium cursor-pointer min-h-[44px] font-bengali">
             <input
@@ -249,7 +292,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({onOpenWhatsNew}) 
           </div>
         </div>
 
-        {/* Preferred Tafsir selector */}
         {tafsirs.length > 0 && (
           <div>
             <label className="block text-xs font-medium text-muted dark:text-muted-dark mb-1.5">
@@ -331,6 +373,65 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({onOpenWhatsNew}) 
               {t.settings.standard}
             </button>
           </div>
+        </div>
+
+        {/* Experimental: device voice for English hadith */}
+        <div className="pt-2 border-t border-brand-500/12 dark:border-white/10">
+          <label className="flex items-start justify-between gap-3 cursor-pointer min-h-[48px]">
+            <div className="flex items-start gap-2.5">
+              <Volume2 className="w-4 h-4 text-brand-600 dark:text-accent mt-0.5 shrink-0" />
+              <div>
+                <p className="text-xs sm:text-sm font-semibold text-ink dark:text-ink-dark">
+                  {t.settings.experimentalTtsTitle}
+                </p>
+                <p className="text-xs text-muted dark:text-muted-dark mt-0.5">
+                  {t.settings.experimentalTtsDesc}
+                </p>
+              </div>
+            </div>
+            <input
+              type="checkbox"
+              checked={settings.enableExperimentalEnglishHadithTts}
+              onChange={(e) =>
+                updateSettings({enableExperimentalEnglishHadithTts: e.target.checked})
+              }
+              className="w-5 h-5 mt-0.5 accent-brand-600 dark:accent-accent shrink-0"
+            />
+          </label>
+        </div>
+      </section>
+
+      {/* Backup & Restore */}
+      <section className="rounded-3xl glass p-5 space-y-3">
+        <h3 className="text-sm font-bold text-brand-700 dark:text-accent">
+          {t.settings.backupTitle}
+        </h3>
+        <p className="text-xs text-muted dark:text-muted-dark">{t.settings.backupDesc}</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+          <button
+            type="button"
+            onClick={handleExportBackup}
+            className="md-ripple min-h-[48px] px-4 rounded-2xl bg-brand-600 text-white dark:bg-accent dark:text-brand-950 text-xs font-semibold flex items-center justify-center gap-2"
+          >
+            <Download className="w-4 h-4" />
+            <span>{t.settings.exportBackup}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="md-ripple min-h-[48px] px-4 rounded-2xl glass text-xs font-semibold flex items-center justify-center gap-2"
+          >
+            <Upload className="w-4 h-4" />
+            <span>{t.settings.importBackup}</span>
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json,application/json"
+            onChange={handleImportFile}
+            className="hidden"
+          />
         </div>
       </section>
 
@@ -436,48 +537,21 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({onOpenWhatsNew}) 
                   <p>
                     {pickLang(
                       lang,
-                      'Quranfy is a 100% free Quran audio player, Tafsir reader, and Hadith explorer designed for calm study, work, and sleep—with zero ads, zero subscriptions, and no account required.',
-                      'قرآنفاي هو مشغل صوتي وقارئ للقرآن الكريم مع التفسير وموسوعة الحديث مجاني بالكامل (١٠٠٪) مصمم للدراسة والعمل والنوم، بدون إعلانات أو اشتراكات أو تسجيل دخول.',
-                      'কুরআনফাই হলো পড়াশোনা, কাজ ও ঘুমের জন্য ১০০% বিনামূল্যে কুরআন অডিও প্লেয়ার, তাফসীর ও হাদিস সংকলন—কোনো বিজ্ঞাপন, সাবস্ক্রিপশন বা লগইন ছাড়াই।'
+                      'Quranfy is a 100% free Quran audio player, Tafsir reader, Hadith explorer, Prayer & Qibla, Adhkar, and Hifz companion—with zero ads, zero subscriptions, and no account required.',
+                      'قرآنفاي هو تطبيق مجاني بالكامل (١٠٠٪) للاستماع إلى القرآن وتدبره مع التفسير والحديث والأذكار ومواقيت الصلاة والحفظ، بدون إعلانات أو اشتراكات.',
+                      'কুরআনফাই ১০০% বিনামূল্যে কুরআন অডিও প্লেয়ার, তাফসীর, হাদিস, নামাজের সময়, আযকার ও হিফজ সহায়ক—বিজ্ঞাপন ও সাবস্ক্রিপশনমুক্ত।'
                     )}
                   </p>
                   <div className="rounded-2xl glass p-3.5 space-y-1.5 text-xs">
                     <p className="font-bold text-brand-700 dark:text-accent">
                       {pickLang(lang, 'Open Data Sources', 'مصادر البيانات المفتوحة', 'ওপেন ডেটা উৎস')}
                     </p>
-                    <p>
-                      • Quran text & search: <strong>AlQuran.cloud API</strong>
-                    </p>
-                    <p>
-                      • Tafsir (EN / BN): <strong>Quran.com API v4</strong>
-                    </p>
-                    <p>
-                      • Bangla Quran (Muhiuddin Khan): <strong>fawazahmed0/quran-api</strong>
-                    </p>
-                    <p>
-                      • Hadith collections (AR / EN / BN): <strong>fawazahmed0/hadith-api</strong>
-                    </p>
-                    <p>
-                      • Recitations: <strong>MP3Quran.net</strong> &amp; <strong>EveryAyah.com</strong>
-                    </p>
-                  </div>
-                  <div className="rounded-2xl glass p-3.5 space-y-1 text-xs">
-                    <p className="font-bold text-brand-700 dark:text-accent">
-                      {pickLang(
-                        lang,
-                        'Hadith Sources & Reliability',
-                        'مصادر الحديث والموثوقية',
-                        'হাদিসের উৎস ও নির্ভরযোগ্যতা'
-                      )}
-                    </p>
-                    <p>
-                      {pickLang(
-                        lang,
-                        'Hadith texts and scholar grades (Sahih, Hasan, Da‘if when available) are loaded directly from fawazahmed0/hadith-api (sourced from Sunnah.com & established collections). Always verify rulings with qualified scholars. Hadith spoken playback uses your device Text-to-Speech engine rather than human recitation.',
-                        'يتم جلب نصوص الأحاديث ودرجاتها (صحيح/حسن/ضعيف عند توفرها) من fawazahmed0/hadith-api. يُنصح بالرجوع إلى أهل العلم في الأحكام. الاستماع للأحاديث يعتمد على محرك تحويل النص إلى كلام في جهازك وليس تلاوة بشرية.',
-                        'হাদিসের পাঠ ও মান (সহীহ, হাসান, যঈফ—উপলব্ধ থাকলে) fawazahmed0/hadith-api থেকে সংগৃহীত। শরয়ী মাসআলার জন্য আলেমদের পরামর্শ নিন। হাদিস শোনা আপনার ডিভাইসের টেক্সট-টু-স্পিচ ইঞ্জিন ব্যবহার করে, কোনো ক্বারি তিলাওয়াত নয়।'
-                      )}
-                    </p>
+                    <p>• Quran text &amp; search: <strong>AlQuran.cloud API</strong></p>
+                    <p>• Tafsir (EN / BN): <strong>Quran.com API v4</strong></p>
+                    <p>• Bangla Quran (Muhiuddin Khan): <strong>fawazahmed0/quran-api</strong></p>
+                    <p>• Hadith collections: <strong>fawazahmed0/hadith-api</strong></p>
+                    <p>• Prayer &amp; Qibla (Offline): <strong>adhan</strong></p>
+                    <p>• Recitations: <strong>MP3Quran.net</strong> &amp; <strong>EveryAyah.com</strong></p>
                   </div>
                 </>
               )}
@@ -500,9 +574,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({onOpenWhatsNew}) 
                 <p>
                   {pickLang(
                     lang,
-                    'Quranfy collects zero personal data, zero analytics, and zero tracking cookies. Your favorites, playlists, listening streaks, Tafsir/Hadith caches, and offline downloads stay strictly on your device.',
-                    'لا يجمع تطبيق قرآنفاي أي بيانات شخصية أو تحليلات أو ملفات تتبع. يتم حفظ المفضلة والقوائم والملفات المحملة وسجل الاستماع محلياً على جهازك فقط.',
-                    'কুরআনফাই কোনো ব্যক্তিগত তথ্য, অ্যানালিটিক্স বা ট্র্যাকিং কুকি সংগ্রহ করে না। আপনার প্রিয় তালিকা, প্লেলিস্ট, অফলাইন ক্যাশ ও ডাউনলোড শুধুই আপনার ডিভাইসে সংরক্ষিত থাকে।'
+                    'Quranfy collects zero personal data, zero analytics, and zero tracking cookies. Your bookmarks, notes, playlists, Khatam/Hifz progress, and offline downloads stay strictly on your device.',
+                    'لا يجمع تطبيق قرآنفاي أي بيانات شخصية أو تحليلات أو ملفات تتبع. كل بياناتك تبقى محلياً على جهازك فقط.',
+                    'কুরআনফাই কোনো ব্যক্তিগত তথ্য, অ্যানালিটিক্স বা ট্র্যাকিং কুকি সংগ্রহ করে না। আপনার সব তথ্য শুধুই আপনার ডিভাইসে থাকে।'
                   )}
                 </p>
               )}
@@ -513,3 +587,4 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({onOpenWhatsNew}) 
     </div>
   );
 };
+export default SettingsScreen;

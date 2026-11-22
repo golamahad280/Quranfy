@@ -29,7 +29,16 @@ export type PlayMode = 'surah' | 'ayah';
 
 export type AppLanguage = 'en' | 'ar' | 'bn';
 
-export type TabId = 'home' | 'hadith' | 'search' | 'library' | 'stats' | 'settings';
+export type TabId = 'home' | 'quran' | 'hadith' | 'library' | 'more';
+
+export type MoreSectionId =
+  | 'prayer'
+  | 'adhkar'
+  | 'hifz'
+  | 'khatam'
+  | 'bookmarks'
+  | 'stats'
+  | 'settings';
 
 export interface SurahMeta {
   number: number;
@@ -115,6 +124,23 @@ export interface FavoriteAyah {
   savedAt: number;
 }
 
+export interface BookmarkedAyah {
+  id: string; // `${surahNumber}:${ayahNumber}`
+  surahNumber: number;
+  ayahNumber: number;
+  surahNameEn: string;
+  surahNameAr: string;
+  arabicText: string;
+  translationText: string;
+  savedAt: number;
+}
+
+export interface LastReadQuran {
+  surahNumber: number;
+  ayahNumber: number;
+  updatedAt: number;
+}
+
 export interface RecentPlayItem {
   surahNumber: number;
   reciterId: string;
@@ -133,6 +159,7 @@ export interface AppSettings {
   selectedTafsirId: number | null;
   audioQuality: 'high' | 'standard';
   defaultReciterId: string;
+  enableExperimentalEnglishHadithTts: boolean;
 }
 
 export interface TranslationOption {
@@ -244,4 +271,69 @@ export interface FavoriteHadith {
   banglaText: string;
   grades: HadithGrade[];
   savedAt: number;
+}
+
+export type AdhkarCategory = 'morning' | 'evening' | 'after-prayer' | 'sleep' | 'travel';
+
+export interface AdhkarItem {
+  id: string;
+  category: AdhkarCategory;
+  titleEn: string;
+  titleAr: string;
+  titleBn: string;
+  arabic: string;
+  transliteration: string;
+  english: string;
+  bangla: string;
+  count: number;
+  reference: string;
+}
+
+export type PrayerCalculationMethodId =
+  | 'MuslimWorldLeague'
+  | 'Egyptian'
+  | 'Karachi'
+  | 'UmmAlQura'
+  | 'Dubai'
+  | 'MoonsightingCommittee'
+  | 'NorthAmerica'
+  | 'Kuwait'
+  | 'Qatar'
+  | 'Singapore'
+  | 'Tehran'
+  | 'Turkey';
+
+export type PrayerKey = 'fajr' | 'dhuhr' | 'asr' | 'maghrib' | 'isha';
+
+export interface PrayerSettings {
+  latitude: number;
+  longitude: number;
+  cityName: string;
+  method: PrayerCalculationMethodId;
+  madhab: 'shafi' | 'hanafi';
+  notifications: Record<PrayerKey, boolean>;
+}
+
+export interface HifzState {
+  memorizedAyahKeys: string[]; // `${surahNumber}:${ayahNumber}`
+  sessionsCompleted: number;
+  lastSurahNumber: number;
+  lastRangeStart: number;
+  lastRangeEnd: number;
+}
+
+export interface KhatamState {
+  dailyPagesGoal: number; // default 20 (30-day Khatam)
+  pagesCompleted: number; // 0..604
+  startedAt: number;
+  historyByDate: Record<string, number>;
+}
+
+export interface ShareImagePayload {
+  surahNameEn: string;
+  surahNameAr: string;
+  surahNumber: number;
+  ayahNumber: number;
+  arabicText: string;
+  translationText: string;
 }

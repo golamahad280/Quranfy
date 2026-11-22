@@ -14,16 +14,23 @@ import {
   AmbientPresetId,
   AmbientSoundType,
   AppSettings,
+  BookmarkedAyah,
   FavoriteAyah,
   FavoriteHadith,
   FocusMode,
   HadithBookmark,
+  HifzState,
+  KhatamState,
+  LastReadQuran,
+  MoreSectionId,
   Playlist,
   PlaylistItem,
   PlayMode,
+  PrayerSettings,
   RecentPlayItem,
   Reciter,
   RepeatMode,
+  ShareImagePayload,
   SurahMeta,
   TabId,
 } from '../types/quran';
@@ -50,11 +57,45 @@ export function getActiveAmbientSounds(mix: AmbientMixState): AmbientSoundType[]
   return AMBIENT_SOUNDS.filter((id) => mix.channels[id]?.enabled);
 }
 
+const DEFAULT_PRAYER_SETTINGS: PrayerSettings = {
+  latitude: 21.4225,
+  longitude: 39.8262,
+  cityName: 'Makkah',
+  method: 'UmmAlQura',
+  madhab: 'shafi',
+  notifications: {
+    fajr: false,
+    dhuhr: false,
+    asr: false,
+    maghrib: false,
+    isha: false,
+  },
+};
+
+const DEFAULT_HIFZ_STATE: HifzState = {
+  memorizedAyahKeys: [],
+  sessionsCompleted: 0,
+  lastSurahNumber: 112,
+  lastRangeStart: 1,
+  lastRangeEnd: 4,
+};
+
+const DEFAULT_KHATAM_STATE: KhatamState = {
+  dailyPagesGoal: 20,
+  pagesCompleted: 0,
+  startedAt: Date.now(),
+  historyByDate: {},
+};
+
 interface QuranState {
   // Navigation & UI
   activeTab: TabId;
+  moreSection: MoreSectionId | null;
+  isSearchOpen: boolean;
   readerSurahNumber: number | null;
+  readerTargetAyahNumber: number | null;
   tafsirTarget: {surahNumber: number; ayahNumber: number; arabicText: string} | null;
+  shareImagePayload: ShareImagePayload | null;
   isFullPlayerOpen: boolean;
   isAmbientSheetOpen: boolean;
   hasCompletedOnboarding: boolean;
@@ -100,11 +141,14 @@ interface QuranState {
   sleepTimerEndsAt: number | null;
   isFadingOut: boolean;
 
-  // Resume & Favorites & Recent
+  // Resume, Reading Progress, Favorites, Bookmarks, Notes & Recent
   resumePositionSec: number;
+  lastReadQuran: LastReadQuran | null;
   favoriteSurahNumbers: number[];
   favoriteReciterIds: string[];
   favoriteAyahs: FavoriteAyah[];
+  bookmarkedAyahs: BookmarkedAyah[];
+  ayahNotes: Record<string, string>;
   recentlyPlayed: RecentPlayItem[];
 
   // Daily Habit & Stats
@@ -119,20 +163,33 @@ interface QuranState {
 
   // Hadith persistence
   favoriteHadiths: FavoriteHadith[];
+  hadithNotes: Record<string, string>;
   hadithBookmark: HadithBookmark | null;
   hadithFontSize: number;
+  hadithLineHeight: number;
   hadithTtsSpeed: number;
   hadithAutoNext: boolean;
+
+  // Offline Worship & Memorization Features
+  favoriteAdhkarIds: string[];
+  prayerSettings: PrayerSettings;
+  hifzState: HifzState;
+  khatamState: KhatamState;
 
   // Settings
   settings: AppSettings;
 
   // Actions
   setActiveTab: (tab: TabId) => void;
-  openReader: (surahNumber: number) => void;
+  setMoreSection: (section: MoreSectionId | null) => void;
+  openMoreSection: (section: MoreSectionId) => void;
+  setSearchOpen: (open: boolean) => void;
+  openReader: (surahNumber: number, targetAyahNumber?: number) => void;
   closeReader: () => void;
   openTafsirSheet: (surahNumber: number, ayahNumber: number, arabicText: string) => void;
   closeTafsirSheet: () => void;
+  openShareImageModal: (payload: ShareImagePayload) => void;
+  closeShareImageModal: () => void;
   setFullPlayerOpen: (open: boolean) => void;
   setAmbientSheetOpen: (open: boolean) => void;
   completeOnboarding: () => void;
@@ -184,11 +241,14 @@ interface QuranState {
   setContinueToNextAyah: (val: boolean) => void;
   setSleepTimer: (setting: SleepTimerType) => void;
   setResumePositionSec: (sec: number) => void;
+  setLastReadQuran: (surahNumber: number, ayahNumber: number) => void;
 
-  // Favorites
+  // Favorites, Bookmarks & Notes
   toggleFavoriteSurah: (surahNumber: number) => void;
   toggleFavoriteReciter: (reciterId: string) => void;
   toggleFavoriteAyah: (ayah: FavoriteAyah) => void;
+  toggleBookmarkedAyah: (ayah: BookmarkedAyah) => void;
+  setAyahNote: (surahNumber: number, ayahNumber: number, note: string) => void;
   recordRecentPlay: (surahNumber: number, reciterId: string) => void;
 
   // Playlists
@@ -211,13 +271,28 @@ interface QuranState {
 
   // Hadith actions
   toggleFavoriteHadith: (item: FavoriteHadith) => void;
+  setHadithNote: (id: string, note: string) => void;
   setHadithBookmark: (bookmark: HadithBookmark | null) => void;
   setHadithFontSize: (size: number) => void;
+  setHadithLineHeight: (lh: number) => void;
   setHadithTtsSpeed: (speed: number) => void;
   setHadithAutoNext: (autoNext: boolean) => void;
 
-  // Settings
+  // Adhkar, Prayer, Hifz, Khatam actions
+  toggleFavoriteAdhkar: (id: string) => void;
+  updatePrayerSettings: (patch: Partial<PrayerSettings>) => void;
+  toggleMemorizedAyah: (surahNumber: number, ayahNumber: number) => void;
+  recordHifzSession: (surahNumber: number, start: number, end: number) => void;
+  updateHifzRange: (surahNumber: number, start: number, end: number) => void;
+  setKhatamGoal: (dailyPages: number) => void;
+  logKhatamPages: (deltaPages: number) => void;
+  setKhatamPagesCompleted: (pages: number) => void;
+  resetKhatam: () => void;
+
+  // Settings & Backup
   updateSettings: (patch: Partial<AppSettings>) => void;
+  exportBackupJson: () => string;
+  importBackupJson: (rawJson: string) => {ok: boolean; error?: string};
 }
 
 export function getTodayDateKey(): string {
@@ -240,7 +315,7 @@ export function calculateStreakDays(logs: Record<string, number>): number {
   };
 
   const todaySec = logs[formatDate(today)] || 0;
-  let cursor = new Date(today);
+  const cursor = new Date(today);
   if (todaySec < 60) {
     cursor.setDate(cursor.getDate() - 1);
   }
@@ -257,12 +332,18 @@ export function calculateStreakDays(logs: Record<string, number>): number {
   return streak;
 }
 
+const VALID_TABS = new Set<TabId>(['home', 'quran', 'hadith', 'library', 'more']);
+
 export const useQuranStore = create<QuranState>()(
   persist(
     (set, get) => ({
       activeTab: 'home',
+      moreSection: null,
+      isSearchOpen: false,
       readerSurahNumber: null,
+      readerTargetAyahNumber: null,
       tafsirTarget: null,
+      shareImagePayload: null,
       isFullPlayerOpen: false,
       isAmbientSheetOpen: false,
       hasCompletedOnboarding: false,
@@ -305,9 +386,12 @@ export const useQuranStore = create<QuranState>()(
       isFadingOut: false,
 
       resumePositionSec: 0,
+      lastReadQuran: null,
       favoriteSurahNumbers: [1, 18, 55, 67],
       favoriteReciterIds: ['mishary-alafasy', 'hazza-balushi'],
       favoriteAyahs: [],
+      bookmarkedAyahs: [],
+      ayahNotes: {},
       recentlyPlayed: [],
 
       dailyGoalMinutes: 15,
@@ -319,10 +403,17 @@ export const useQuranStore = create<QuranState>()(
       downloadedKeys: [],
 
       favoriteHadiths: [],
+      hadithNotes: {},
       hadithBookmark: null,
       hadithFontSize: 24,
+      hadithLineHeight: 1.85,
       hadithTtsSpeed: 1,
       hadithAutoNext: false,
+
+      favoriteAdhkarIds: [],
+      prayerSettings: DEFAULT_PRAYER_SETTINGS,
+      hifzState: DEFAULT_HIFZ_STATE,
+      khatamState: DEFAULT_KHATAM_STATE,
 
       settings: {
         theme: 'auto',
@@ -336,14 +427,30 @@ export const useQuranStore = create<QuranState>()(
         selectedTafsirId: null,
         audioQuality: 'high',
         defaultReciterId: 'mishary-alafasy',
+        enableExperimentalEnglishHadithTts: false,
       },
 
       setActiveTab: (activeTab) => set({activeTab}),
-      openReader: (surahNumber) => set({readerSurahNumber: surahNumber}),
-      closeReader: () => set({readerSurahNumber: null, tafsirTarget: null}),
+      setMoreSection: (moreSection) => set({moreSection}),
+      openMoreSection: (section) => set({activeTab: 'more', moreSection: section}),
+      setSearchOpen: (isSearchOpen) => set({isSearchOpen}),
+      openReader: (surahNumber, targetAyahNumber) =>
+        set({
+          readerSurahNumber: surahNumber,
+          readerTargetAyahNumber: targetAyahNumber ?? null,
+          lastReadQuran: {
+            surahNumber,
+            ayahNumber: targetAyahNumber ?? 1,
+            updatedAt: Date.now(),
+          },
+        }),
+      closeReader: () =>
+        set({readerSurahNumber: null, readerTargetAyahNumber: null, tafsirTarget: null}),
       openTafsirSheet: (surahNumber, ayahNumber, arabicText) =>
         set({tafsirTarget: {surahNumber, ayahNumber, arabicText}}),
       closeTafsirSheet: () => set({tafsirTarget: null}),
+      openShareImageModal: (shareImagePayload) => set({shareImagePayload}),
+      closeShareImageModal: () => set({shareImagePayload: null}),
       setFullPlayerOpen: (isFullPlayerOpen) => set({isFullPlayerOpen}),
       setAmbientSheetOpen: (isAmbientSheetOpen) => set({isAmbientSheetOpen}),
       completeOnboarding: () =>
@@ -557,6 +664,9 @@ export const useQuranStore = create<QuranState>()(
 
       setResumePositionSec: (resumePositionSec) => set({resumePositionSec}),
 
+      setLastReadQuran: (surahNumber, ayahNumber) =>
+        set({lastReadQuran: {surahNumber, ayahNumber, updatedAt: Date.now()}}),
+
       toggleFavoriteSurah: (surahNumber) =>
         set((s) => ({
           favoriteSurahNumbers: s.favoriteSurahNumbers.includes(surahNumber)
@@ -579,6 +689,29 @@ export const useQuranStore = create<QuranState>()(
               ? s.favoriteAyahs.filter((a) => a.id !== ayah.id)
               : [ayah, ...s.favoriteAyahs],
           };
+        }),
+
+      toggleBookmarkedAyah: (ayah) =>
+        set((s) => {
+          const exists = s.bookmarkedAyahs.some((a) => a.id === ayah.id);
+          return {
+            bookmarkedAyahs: exists
+              ? s.bookmarkedAyahs.filter((a) => a.id !== ayah.id)
+              : [ayah, ...s.bookmarkedAyahs],
+          };
+        }),
+
+      setAyahNote: (surahNumber, ayahNumber, note) =>
+        set((s) => {
+          const key = `${surahNumber}:${ayahNumber}`;
+          const next = {...s.ayahNotes};
+          const trimmed = note.trim();
+          if (trimmed) {
+            next[key] = trimmed;
+          } else {
+            delete next[key];
+          }
+          return {ayahNotes: next};
         }),
 
       recordRecentPlay: (surahNumber, reciterId) =>
@@ -716,15 +849,244 @@ export const useQuranStore = create<QuranState>()(
               : [item, ...s.favoriteHadiths],
           };
         }),
+      setHadithNote: (id, note) =>
+        set((s) => {
+          const next = {...s.hadithNotes};
+          const trimmed = note.trim();
+          if (trimmed) {
+            next[id] = trimmed;
+          } else {
+            delete next[id];
+          }
+          return {hadithNotes: next};
+        }),
       setHadithBookmark: (hadithBookmark) => set({hadithBookmark}),
       setHadithFontSize: (hadithFontSize) => set({hadithFontSize}),
+      setHadithLineHeight: (hadithLineHeight) => set({hadithLineHeight}),
       setHadithTtsSpeed: (hadithTtsSpeed) => set({hadithTtsSpeed}),
       setHadithAutoNext: (hadithAutoNext) => set({hadithAutoNext}),
+
+      toggleFavoriteAdhkar: (id) =>
+        set((s) => ({
+          favoriteAdhkarIds: s.favoriteAdhkarIds.includes(id)
+            ? s.favoriteAdhkarIds.filter((x) => x !== id)
+            : [id, ...s.favoriteAdhkarIds],
+        })),
+
+      updatePrayerSettings: (patch) =>
+        set((s) => ({
+          prayerSettings: {
+            ...s.prayerSettings,
+            ...patch,
+            notifications: patch.notifications
+              ? {...s.prayerSettings.notifications, ...patch.notifications}
+              : s.prayerSettings.notifications,
+          },
+        })),
+
+      toggleMemorizedAyah: (surahNumber, ayahNumber) =>
+        set((s) => {
+          const key = `${surahNumber}:${ayahNumber}`;
+          const exists = s.hifzState.memorizedAyahKeys.includes(key);
+          return {
+            hifzState: {
+              ...s.hifzState,
+              memorizedAyahKeys: exists
+                ? s.hifzState.memorizedAyahKeys.filter((k) => k !== key)
+                : [key, ...s.hifzState.memorizedAyahKeys],
+            },
+          };
+        }),
+
+      recordHifzSession: (surahNumber, start, end) =>
+        set((s) => ({
+          hifzState: {
+            ...s.hifzState,
+            sessionsCompleted: s.hifzState.sessionsCompleted + 1,
+            lastSurahNumber: surahNumber,
+            lastRangeStart: start,
+            lastRangeEnd: end,
+          },
+        })),
+
+      updateHifzRange: (surahNumber, start, end) =>
+        set((s) => ({
+          hifzState: {
+            ...s.hifzState,
+            lastSurahNumber: surahNumber,
+            lastRangeStart: start,
+            lastRangeEnd: end,
+          },
+        })),
+
+      setKhatamGoal: (dailyPagesGoal) =>
+        set((s) => ({
+          khatamState: {
+            ...s.khatamState,
+            dailyPagesGoal: Math.max(1, Math.min(100, dailyPagesGoal)),
+          },
+        })),
+
+      logKhatamPages: (deltaPages) =>
+        set((s) => {
+          const today = getTodayDateKey();
+          const nextTotal = Math.max(0, Math.min(604, s.khatamState.pagesCompleted + deltaPages));
+          const prevToday = s.khatamState.historyByDate[today] || 0;
+          return {
+            khatamState: {
+              ...s.khatamState,
+              pagesCompleted: nextTotal,
+              historyByDate: {
+                ...s.khatamState.historyByDate,
+                [today]: Math.max(0, prevToday + deltaPages),
+              },
+            },
+          };
+        }),
+
+      setKhatamPagesCompleted: (pages) =>
+        set((s) => ({
+          khatamState: {
+            ...s.khatamState,
+            pagesCompleted: Math.max(0, Math.min(604, pages)),
+          },
+        })),
+
+      resetKhatam: () =>
+        set((s) => ({
+          khatamState: {
+            ...s.khatamState,
+            pagesCompleted: 0,
+            startedAt: Date.now(),
+            historyByDate: {},
+          },
+        })),
 
       updateSettings: (patch) =>
         set((s) => ({
           settings: {...s.settings, ...patch},
         })),
+
+      exportBackupJson: () => {
+        const s = get();
+        const payload = {
+          app: 'Quranfy',
+          schemaVersion: 1,
+          appVersion: APP_VERSION,
+          exportedAt: new Date().toISOString(),
+          data: {
+            customPlaylists: s.customPlaylists,
+            focusMode: s.focusMode,
+            ambientMix: s.ambientMix,
+            lastReadQuran: s.lastReadQuran,
+            favoriteSurahNumbers: s.favoriteSurahNumbers,
+            favoriteReciterIds: s.favoriteReciterIds,
+            favoriteAyahs: s.favoriteAyahs,
+            bookmarkedAyahs: s.bookmarkedAyahs,
+            ayahNotes: s.ayahNotes,
+            favoriteHadiths: s.favoriteHadiths,
+            hadithNotes: s.hadithNotes,
+            hadithBookmark: s.hadithBookmark,
+            hadithFontSize: s.hadithFontSize,
+            hadithLineHeight: s.hadithLineHeight,
+            recentlyPlayed: s.recentlyPlayed,
+            dailyGoalMinutes: s.dailyGoalMinutes,
+            listeningSecondsByDate: s.listeningSecondsByDate,
+            reminderEnabled: s.reminderEnabled,
+            reminderTime: s.reminderTime,
+            favoriteAdhkarIds: s.favoriteAdhkarIds,
+            prayerSettings: s.prayerSettings,
+            hifzState: s.hifzState,
+            khatamState: s.khatamState,
+            settings: s.settings,
+          },
+        };
+        return JSON.stringify(payload, null, 2);
+      },
+
+      importBackupJson: (rawJson) => {
+        try {
+          const parsed = JSON.parse(rawJson) as Record<string, unknown>;
+          if (!parsed || typeof parsed !== 'object' || parsed.app !== 'Quranfy') {
+            return {ok: false, error: 'Invalid backup file format (expected Quranfy JSON).'};
+          }
+          const data = parsed.data as Record<string, unknown> | undefined;
+          if (!data || typeof data !== 'object') {
+            return {ok: false, error: 'Backup file is missing data section.'};
+          }
+
+          const current = get();
+          set({
+            customPlaylists: Array.isArray(data.customPlaylists)
+              ? (data.customPlaylists as Playlist[])
+              : current.customPlaylists,
+            favoriteSurahNumbers: Array.isArray(data.favoriteSurahNumbers)
+              ? (data.favoriteSurahNumbers as number[])
+              : current.favoriteSurahNumbers,
+            favoriteReciterIds: Array.isArray(data.favoriteReciterIds)
+              ? (data.favoriteReciterIds as string[])
+              : current.favoriteReciterIds,
+            favoriteAyahs: Array.isArray(data.favoriteAyahs)
+              ? (data.favoriteAyahs as FavoriteAyah[])
+              : current.favoriteAyahs,
+            bookmarkedAyahs: Array.isArray(data.bookmarkedAyahs)
+              ? (data.bookmarkedAyahs as BookmarkedAyah[])
+              : current.bookmarkedAyahs,
+            ayahNotes:
+              data.ayahNotes && typeof data.ayahNotes === 'object'
+                ? (data.ayahNotes as Record<string, string>)
+                : current.ayahNotes,
+            favoriteHadiths: Array.isArray(data.favoriteHadiths)
+              ? (data.favoriteHadiths as FavoriteHadith[])
+              : current.favoriteHadiths,
+            hadithNotes:
+              data.hadithNotes && typeof data.hadithNotes === 'object'
+                ? (data.hadithNotes as Record<string, string>)
+                : current.hadithNotes,
+            hadithBookmark:
+              data.hadithBookmark && typeof data.hadithBookmark === 'object'
+                ? (data.hadithBookmark as HadithBookmark)
+                : current.hadithBookmark,
+            lastReadQuran:
+              data.lastReadQuran && typeof data.lastReadQuran === 'object'
+                ? (data.lastReadQuran as LastReadQuran)
+                : current.lastReadQuran,
+            recentlyPlayed: Array.isArray(data.recentlyPlayed)
+              ? (data.recentlyPlayed as RecentPlayItem[])
+              : current.recentlyPlayed,
+            listeningSecondsByDate:
+              data.listeningSecondsByDate && typeof data.listeningSecondsByDate === 'object'
+                ? (data.listeningSecondsByDate as Record<string, number>)
+                : current.listeningSecondsByDate,
+            dailyGoalMinutes:
+              typeof data.dailyGoalMinutes === 'number'
+                ? data.dailyGoalMinutes
+                : current.dailyGoalMinutes,
+            favoriteAdhkarIds: Array.isArray(data.favoriteAdhkarIds)
+              ? (data.favoriteAdhkarIds as string[])
+              : current.favoriteAdhkarIds,
+            prayerSettings:
+              data.prayerSettings && typeof data.prayerSettings === 'object'
+                ? {...current.prayerSettings, ...(data.prayerSettings as Partial<PrayerSettings>)}
+                : current.prayerSettings,
+            hifzState:
+              data.hifzState && typeof data.hifzState === 'object'
+                ? {...current.hifzState, ...(data.hifzState as Partial<HifzState>)}
+                : current.hifzState,
+            khatamState:
+              data.khatamState && typeof data.khatamState === 'object'
+                ? {...current.khatamState, ...(data.khatamState as Partial<KhatamState>)}
+                : current.khatamState,
+            settings:
+              data.settings && typeof data.settings === 'object'
+                ? {...current.settings, ...(data.settings as Partial<AppSettings>)}
+                : current.settings,
+          });
+          return {ok: true};
+        } catch {
+          return {ok: false, error: 'Could not parse JSON backup file.'};
+        }
+      },
     }),
     {
       name: 'quranfy-store-v1',
@@ -739,9 +1101,28 @@ export const useQuranStore = create<QuranState>()(
             }
           }
         }
+        const rawTab = p.activeTab as TabId | undefined;
+        const safeTab: TabId = rawTab && VALID_TABS.has(rawTab) ? rawTab : 'home';
         return {
           ...current,
           ...p,
+          activeTab: safeTab,
+          prayerSettings: {
+            ...current.prayerSettings,
+            ...(p.prayerSettings || {}),
+            notifications: {
+              ...current.prayerSettings.notifications,
+              ...(p.prayerSettings?.notifications || {}),
+            },
+          },
+          hifzState: {
+            ...current.hifzState,
+            ...(p.hifzState || {}),
+          },
+          khatamState: {
+            ...current.khatamState,
+            ...(p.khatamState || {}),
+          },
           settings: {
             ...current.settings,
             ...(p.settings || {}),
@@ -766,12 +1147,17 @@ export const useQuranStore = create<QuranState>()(
         repeatMode: state.repeatMode,
         shuffle: state.shuffle,
         resumePositionSec: state.resumePositionSec,
+        lastReadQuran: state.lastReadQuran,
         favoriteSurahNumbers: state.favoriteSurahNumbers,
         favoriteReciterIds: state.favoriteReciterIds,
         favoriteAyahs: state.favoriteAyahs,
+        bookmarkedAyahs: state.bookmarkedAyahs,
+        ayahNotes: state.ayahNotes,
         favoriteHadiths: state.favoriteHadiths,
+        hadithNotes: state.hadithNotes,
         hadithBookmark: state.hadithBookmark,
         hadithFontSize: state.hadithFontSize,
+        hadithLineHeight: state.hadithLineHeight,
         hadithTtsSpeed: state.hadithTtsSpeed,
         hadithAutoNext: state.hadithAutoNext,
         recentlyPlayed: state.recentlyPlayed,
@@ -779,6 +1165,10 @@ export const useQuranStore = create<QuranState>()(
         listeningSecondsByDate: state.listeningSecondsByDate,
         reminderEnabled: state.reminderEnabled,
         reminderTime: state.reminderTime,
+        favoriteAdhkarIds: state.favoriteAdhkarIds,
+        prayerSettings: state.prayerSettings,
+        hifzState: state.hifzState,
+        khatamState: state.khatamState,
         settings: state.settings,
       }),
     }

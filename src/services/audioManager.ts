@@ -21,6 +21,13 @@ class SharedAudioManager {
   private lastPositionSyncAt = 0;
   private foregroundChannelCreated = false;
   private foregroundRunning = false;
+  private ayahEndedObserver: ((surahNumber: number, ayahNumber: number) => boolean) | null = null;
+
+  public setAyahEndedObserver(
+    observer: ((surahNumber: number, ayahNumber: number) => boolean) | null
+  ): void {
+    this.ayahEndedObserver = observer;
+  }
 
   constructor() {
     this.audio = new Audio();
@@ -107,6 +114,8 @@ class SharedAudioManager {
         audioError:
           store.settings.language === 'ar'
             ? 'تعذر تشغيل هذا المقطع دون إنترنت. جرّب تحميل السورة أو التبديل لقارئ آخر.'
+            : store.settings.language === 'bn'
+            ? 'অডিও স্ট্রিম চালু করা যায়নি। ইন্টারনেট সংযোগ পরীক্ষা করুন বা অফলাইন সূরা চালান।'
             : 'Unable to load audio stream. Check connection or play a downloaded surah.',
       });
       void this.syncForegroundService(false);
@@ -577,6 +586,13 @@ class SharedAudioManager {
     }
 
     if (store.playMode === 'ayah') {
+      if (
+        this.ayahEndedObserver &&
+        this.ayahEndedObserver(store.currentSurahNumber, store.currentAyahNumber)
+      ) {
+        return;
+      }
+
       if (store.ayahRepeatCurrent < store.ayahRepeatTarget) {
         store.setPlaybackRuntime({ayahRepeatCurrent: store.ayahRepeatCurrent + 1});
         this.audio.currentTime = 0;

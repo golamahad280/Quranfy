@@ -8,7 +8,7 @@ let hadithBackHandler: (() => boolean) | null = null;
 
 /**
  * Allows HadithScreen to intercept Android hardware back button presses
- * when navigating inside Hadith detail / sections before returning to Home.
+ * when navigating inside Reading mode / Hadith detail / sections before returning to Home.
  */
 export function registerHadithBackHandler(fn: (() => boolean) | null): void {
   hadithBackHandler = fn;
@@ -42,6 +42,11 @@ export function initNativeAndroid(): void {
   void App.addListener('backButton', async () => {
     const store = useQuranStore.getState();
 
+    if (store.shareImagePayload) {
+      store.closeShareImageModal();
+      return;
+    }
+
     if (store.tafsirTarget) {
       store.closeTafsirSheet();
       return;
@@ -57,12 +62,22 @@ export function initNativeAndroid(): void {
       return;
     }
 
+    if (store.isSearchOpen) {
+      store.setSearchOpen(false);
+      return;
+    }
+
     if (store.readerSurahNumber !== null) {
       store.closeReader();
       return;
     }
 
     if (store.activeTab === 'hadith' && hadithBackHandler && hadithBackHandler()) {
+      return;
+    }
+
+    if (store.activeTab === 'more' && store.moreSection !== null) {
+      store.setMoreSection(null);
       return;
     }
 

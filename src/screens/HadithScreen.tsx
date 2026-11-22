@@ -1,12 +1,15 @@
 import {
   ArrowLeft,
   BookMarked,
-  BookOpen,
   CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   Copy,
+  Eye,
   Heart,
   Loader2,
+  Maximize2,
+  Minimize2,
   Pause,
   Play,
   RotateCcw,
@@ -14,6 +17,7 @@ import {
   Share2,
   SlidersHorizontal,
   Square,
+  StickyNote,
   Volume2,
   WifiOff,
   X,
@@ -26,7 +30,7 @@ import {
   fetchHadithSection,
   searchHadithsInCollection,
 } from '../services/hadithApi';
-import {HadithSpeakLanguage, hadithTts} from '../services/hadithTts';
+import {hadithTts} from '../services/hadithTts';
 import {registerHadithBackHandler} from '../services/native';
 import {useQuranStore} from '../store/useQuranStore';
 import {
@@ -41,29 +45,28 @@ type HadithViewMode = 'combined' | 'ar' | 'en' | 'bn';
 const PAGE_SIZE = 20;
 const TTS_SPEEDS = [0.75, 0.9, 1, 1.25, 1.5];
 
-export interface HadithDeepLink {
-  collectionSlug: HadithCollectionSlug;
-  sectionNumber?: string;
-  hadithNumber?: number;
-}
-
 export const HadithScreen: React.FC = () => {
   const settings = useQuranStore((s) => s.settings);
   const favoriteHadiths = useQuranStore((s) => s.favoriteHadiths);
+  const hadithNotes = useQuranStore((s) => s.hadithNotes);
   const hadithBookmark = useQuranStore((s) => s.hadithBookmark);
   const hadithFontSize = useQuranStore((s) => s.hadithFontSize);
+  const hadithLineHeight = useQuranStore((s) => s.hadithLineHeight);
   const hadithTtsSpeed = useQuranStore((s) => s.hadithTtsSpeed);
   const hadithAutoNext = useQuranStore((s) => s.hadithAutoNext);
 
   const toggleFavoriteHadith = useQuranStore((s) => s.toggleFavoriteHadith);
+  const setHadithNote = useQuranStore((s) => s.setHadithNote);
   const setHadithBookmark = useQuranStore((s) => s.setHadithBookmark);
   const setHadithFontSize = useQuranStore((s) => s.setHadithFontSize);
+  const setHadithLineHeight = useQuranStore((s) => s.setHadithLineHeight);
   const setHadithTtsSpeed = useQuranStore((s) => s.setHadithTtsSpeed);
   const setHadithAutoNext = useQuranStore((s) => s.setHadithAutoNext);
   const showToast = useQuranStore((s) => s.showToast);
 
   const lang = settings.language;
   const t = TRANSLATIONS[lang];
+  const allowEnglishTts = settings.enableExperimentalEnglishHadithTts;
 
   const [subTab, setSubTab] = useState<'collections' | 'favorites'>('collections');
   const [collections, setCollections] = useState<HadithCollectionInfo[]>([]);
@@ -86,28 +89,27 @@ export const HadithScreen: React.FC = () => {
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
 
-  // Per-view language mode & detail modal
+  // Per-view language mode, detail modal & calm Reading mode
   const [viewMode, setViewMode] = useState<HadithViewMode>('combined');
   const [cardLangOverrides, setCardLangOverrides] = useState<Record<number, HadithViewMode>>({});
   const [detailHadith, setDetailHadith] = useState<HadithEntry | null>(null);
+  const [isReadingMode, setIsReadingMode] = useState(false);
+  const [showNoteEditor, setShowNoteEditor] = useState(false);
+  const [noteDraft, setNoteDraft] = useState('');
 
-  // TTS state
+  // TTS state (English only, experimental)
   const [ttsStatus, setTtsStatus] = useState<'idle' | 'playing' | 'paused'>('idle');
   const [ttsSpeakingNumber, setTtsSpeakingNumber] = useState<number | null>(null);
-  const [ttsLang, setTtsLang] = useState<HadithSpeakLanguage>(
-    lang === 'bn' ? 'bn' : lang === 'ar' ? 'ar' : 'en'
-  );
   const [ttsWarning, setTtsWarning] = useState<{msg: string; missingVoice: boolean} | null>(null);
 
   const [catalogRetryTick, setCatalogRetryTick] = useState(0);
 
-  // Refs for auto-next inside TTS callback without stale closures
-  const activeListRef = useRef<HadithEntry[]>([]);
-  const speakHadithRef = useRef<(entry: HadithEntry, overrideLang?: HadithSpeakLanguage) => void>(
-    () => {}
-  );
+  // Swipe gesture tracking in Reading Mode
+  const touchStartRef = useRef<{x: number; y: number} | null>(null);
 
-  // Load collections & offline cache index
+  const activeListRef = useRef<HadithEntry[]>([]);
+  const speakHadithRef = useRef<(entry: HadithEntry) => void>(() => {});
+
   useEffect(() => {
     let active = true;
     setLoadingCatalog(true);
@@ -131,7 +133,6 @@ export const HadithScreen: React.FC = () => {
     };
   }, [catalogRetryTick, t.hadith.offlineError]);
 
-  // Stop TTS if leaving Hadith screen
   useEffect(() => {
     return () => {
       void hadithTts.stop();
@@ -141,8 +142,13 @@ export const HadithScreen: React.FC = () => {
   // Register Android back-button sub-navigation handler
   useEffect(() => {
     registerHadithBackHandler(() => {
+      if (isReadingMode) {
+        setIsReadingMode(false);
+        return true;
+      }
       if (detailHadith) {
         setDetailHadith(null);
+        setShowNoteEditor(false);
         return true;
       }
       if (searchResults !== null) {
@@ -165,7 +171,7 @@ export const HadithScreen: React.FC = () => {
       return false;
     });
     return () => registerHadithBackHandler(null);
-  }, [detailHadith, searchResults, selectedSection, selectedCollection]);
+  }, [isReadingMode, detailHadith, searchResults, selectedSection, selectedCollection]);
 
   const getCollectionTitle = (col: {nameEn: string; nameAr: string; nameBn: string}) =>
     pickLang(lang, col.nameEn, col.nameAr, col.nameBn);
@@ -241,39 +247,37 @@ export const HadithScreen: React.FC = () => {
 
   const activeHadithList = useMemo(() => {
     if (searchResults !== null) return searchResults;
+    if (subTab === 'favorites' && !selectedCollection) {
+      return favoriteHadiths.map((fav) => ({
+        hadithNumber: fav.hadithNumber,
+        arabicText: fav.arabicText,
+        englishText: fav.englishText,
+        banglaText: fav.banglaText,
+        grades: fav.grades,
+        sectionNumber: fav.sectionNumber,
+      }));
+    }
     return sectionHadiths;
-  }, [searchResults, sectionHadiths]);
+  }, [searchResults, subTab, selectedCollection, favoriteHadiths, sectionHadiths]);
 
   activeListRef.current = activeHadithList;
 
-  const speakHadith = useCallback(
-    async (entry: HadithEntry, requestedLang?: HadithSpeakLanguage) => {
-      const chosenLang = requestedLang || ttsLang;
+  const speakHadithEnglish = useCallback(
+    async (entry: HadithEntry) => {
+      if (!allowEnglishTts || !entry.englishText) return;
       const collectionSlug: HadithCollectionSlug = selectedCollection?.slug || 'bukhari';
-
-      let spokenText = '';
-      let actualLang: HadithSpeakLanguage = chosenLang;
-      if (chosenLang === 'ar') {
-        spokenText = entry.arabicText || entry.englishText;
-        actualLang = entry.arabicText ? 'ar' : 'en';
-      } else if (chosenLang === 'bn') {
-        spokenText = entry.banglaText || entry.englishText;
-        actualLang = entry.banglaText ? 'bn' : 'en';
-      } else {
-        spokenText = entry.englishText || entry.banglaText || entry.arabicText;
-        actualLang = entry.englishText ? 'en' : entry.banglaText ? 'bn' : 'ar';
-      }
 
       setTtsWarning(null);
       setTtsSpeakingNumber(entry.hadithNumber);
       setTtsStatus('playing');
 
       await hadithTts.speak({
-        text: spokenText,
-        lang: actualLang,
+        text: entry.englishText,
+        lang: 'en',
         rate: hadithTtsSpeed,
         collectionSlug,
         hadithNumber: entry.hadithNumber,
+        allowExperimentalDeviceTts: true,
         onComplete: () => {
           const list = activeListRef.current;
           if (useQuranStore.getState().hadithAutoNext && list.length > 0) {
@@ -281,7 +285,7 @@ export const HadithScreen: React.FC = () => {
             if (idx >= 0 && idx + 1 < list.length) {
               const nextItem = list[idx + 1];
               setDetailHadith((prev) => (prev ? nextItem : prev));
-              speakHadithRef.current(nextItem, chosenLang);
+              speakHadithRef.current(nextItem);
               return;
             }
           }
@@ -295,10 +299,10 @@ export const HadithScreen: React.FC = () => {
         },
       });
     },
-    [ttsLang, selectedCollection?.slug, hadithTtsSpeed]
+    [allowEnglishTts, selectedCollection?.slug, hadithTtsSpeed]
   );
 
-  speakHadithRef.current = speakHadith;
+  speakHadithRef.current = speakHadithEnglish;
 
   const handleToggleTtsPause = async () => {
     if (ttsStatus === 'playing') {
@@ -344,7 +348,7 @@ export const HadithScreen: React.FC = () => {
         });
         return;
       } catch {
-        // User cancelled or unsupported; fallback to copy
+        // Fallback to copy
       }
     }
     await handleCopyHadith(entry, colName);
@@ -352,6 +356,21 @@ export const HadithScreen: React.FC = () => {
 
   const isHadithFav = (slug: HadithCollectionSlug, hadithNum: number) =>
     favoriteHadiths.some((h) => h.id === `${slug}:${hadithNum}`);
+
+  const detailIndex = useMemo(() => {
+    if (!detailHadith) return -1;
+    return activeHadithList.findIndex((h) => h.hadithNumber === detailHadith.hadithNumber);
+  }, [detailHadith, activeHadithList]);
+
+  const navigateDetailHadith = (delta: -1 | 1) => {
+    if (detailIndex < 0) return;
+    const nextIdx = detailIndex + delta;
+    if (nextIdx >= 0 && nextIdx < activeHadithList.length) {
+      const next = activeHadithList[nextIdx];
+      setDetailHadith(next);
+      setShowNoteEditor(false);
+    }
+  };
 
   const renderHadithCard = (
     entry: HadithEntry,
@@ -361,7 +380,12 @@ export const HadithScreen: React.FC = () => {
     const isFav = isHadithFav(colInfo.slug, entry.hadithNumber);
     const isSpeakingThis = ttsSpeakingNumber === entry.hadithNumber && ttsStatus !== 'idle';
 
-    // Default translation text inside combined mode respects UI language, falling back smoothly
+    // Listen button only appears for English when Experimental device voice is enabled
+    const showEnglishListenBtn =
+      allowEnglishTts &&
+      Boolean(entry.englishText) &&
+      (effectiveMode === 'en' || effectiveMode === 'combined');
+
     const combinedTranslation =
       lang === 'bn'
         ? entry.banglaText || entry.englishText
@@ -374,13 +398,13 @@ export const HadithScreen: React.FC = () => {
         key={`${colInfo.slug}-${entry.hadithNumber}`}
         className="rounded-3xl glass p-4 sm:p-5 space-y-3"
       >
-        {/* Card Header */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => {
                 setDetailHadith(entry);
+                setShowNoteEditor(false);
                 if (selectedSection) {
                   setHadithBookmark({
                     collectionSlug: colInfo.slug,
@@ -407,7 +431,6 @@ export const HadithScreen: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-1">
-            {/* Per-hadith language toggle */}
             <div className="flex items-center p-0.5 rounded-xl glass text-[11px] font-semibold">
               {(['combined', 'ar', 'en', 'bn'] as const).map((mode) => (
                 <button
@@ -427,25 +450,31 @@ export const HadithScreen: React.FC = () => {
               ))}
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                if (isSpeakingThis) {
-                  void handleStopTts();
-                } else {
-                  void speakHadith(entry);
-                }
-              }}
-              aria-label={t.hadith.listen}
-              title={`${t.hadith.listen} — ${t.hadith.ttsDisclaimer}`}
-              className={`min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl transition-colors ${
-                isSpeakingThis
-                  ? 'bg-brand-600 text-white dark:bg-accent dark:text-brand-950'
-                  : 'hover:bg-brand-500/10 dark:hover:bg-white/10 text-brand-700 dark:text-accent'
-              }`}
-            >
-              {isSpeakingThis ? <Square className="w-3.5 h-3.5 fill-current" /> : <Volume2 className="w-4 h-4" />}
-            </button>
+            {showEnglishListenBtn && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (isSpeakingThis) {
+                    void handleStopTts();
+                  } else {
+                    void speakHadithEnglish(entry);
+                  }
+                }}
+                aria-label={`${t.hadith.listen} — ${t.hadith.ttsDisclaimer}`}
+                title={t.hadith.ttsDisclaimer}
+                className={`min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl transition-colors ${
+                  isSpeakingThis
+                    ? 'bg-brand-600 text-white dark:bg-accent dark:text-brand-950'
+                    : 'hover:bg-brand-500/10 dark:hover:bg-white/10 text-brand-700 dark:text-accent'
+                }`}
+              >
+                {isSpeakingThis ? (
+                  <Square className="w-3.5 h-3.5 fill-current" />
+                ) : (
+                  <Volume2 className="w-4 h-4" />
+                )}
+              </button>
+            )}
 
             <button
               type="button"
@@ -476,14 +505,17 @@ export const HadithScreen: React.FC = () => {
 
         {/* Body */}
         <div
-          onClick={() => setDetailHadith(entry)}
+          onClick={() => {
+            setDetailHadith(entry);
+            setShowNoteEditor(false);
+          }}
           className="space-y-3 cursor-pointer"
         >
           {(effectiveMode === 'combined' || effectiveMode === 'ar') && entry.arabicText && (
             <p
               dir="rtl"
-              className="font-hadith-amiri text-right leading-[2] text-ink dark:text-ink-dark"
-              style={{fontSize: `${hadithFontSize}px`}}
+              className="font-hadith-amiri text-right text-ink dark:text-ink-dark"
+              style={{fontSize: `${hadithFontSize}px`, lineHeight: hadithLineHeight}}
             >
               {entry.arabicText}
             </p>
@@ -556,10 +588,13 @@ export const HadithScreen: React.FC = () => {
     );
   };
 
+  const detailNoteKey = `${selectedCollection?.slug || 'bukhari'}:${detailHadith?.hadithNumber || 0}`;
+  const existingDetailNote = hadithNotes[detailNoteKey] || '';
+
   return (
     <div className="space-y-5 pb-8">
-      {/* Persistent TTS Control Strip whenever active or warning */}
-      {(ttsStatus !== 'idle' || ttsWarning) && (
+      {/* Persistent Experimental English TTS Control Strip whenever active or warning */}
+      {allowEnglishTts && (ttsStatus !== 'idle' || ttsWarning) && (
         <div className="rounded-3xl glass-strong p-4 space-y-2.5 border border-brand-500/30 dark:border-accent/35">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2.5 min-w-0">
@@ -568,8 +603,7 @@ export const HadithScreen: React.FC = () => {
               </div>
               <div className="min-w-0">
                 <p className="text-xs font-bold text-ink dark:text-ink-dark truncate">
-                  {ttsSpeakingNumber ? `Hadith #${ttsSpeakingNumber}` : t.hadith.listen} ·{' '}
-                  {ttsLang.toUpperCase()} ({hadithTtsSpeed}x)
+                  {ttsSpeakingNumber ? `Hadith #${ttsSpeakingNumber}` : t.hadith.listen} · EN ({hadithTtsSpeed}x)
                 </p>
                 <p className="text-[11px] font-semibold text-accent-600 dark:text-accent truncate">
                   {t.hadith.ttsDisclaimer}
@@ -638,7 +672,6 @@ export const HadithScreen: React.FC = () => {
             </div>
           </div>
 
-          {/* Collections vs Favorites Tabs */}
           <div className="grid grid-cols-2 gap-1.5 p-1 rounded-2xl glass max-w-md">
             <button
               type="button"
@@ -666,7 +699,6 @@ export const HadithScreen: React.FC = () => {
 
           {subTab === 'collections' && (
             <div className="space-y-4">
-              {/* Continue Reading Bookmark */}
               {hadithBookmark && collections.length > 0 && (
                 <button
                   type="button"
@@ -812,7 +844,6 @@ export const HadithScreen: React.FC = () => {
             </div>
           </div>
 
-          {/* Search by Number or Keyword */}
           <form onSubmit={handleSearchSubmit} className="flex gap-2">
             <div className="relative flex-1">
               <Search className="w-4 h-4 absolute start-4 top-1/2 -translate-y-1/2 text-muted dark:text-muted-dark pointer-events-none" />
@@ -956,7 +987,6 @@ export const HadithScreen: React.FC = () => {
               </div>
             </div>
 
-            {/* Global Section Language View Switcher */}
             <div className="flex items-center gap-1 p-1 rounded-2xl glass">
               {(
                 [
@@ -1034,163 +1064,257 @@ export const HadithScreen: React.FC = () => {
         </div>
       )}
 
-      {/* HADITH DETAIL MODAL */}
+      {/* HADITH DETAIL MODAL & CALM READING MODE */}
       {detailHadith && (
         <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-brand-950/70 backdrop-blur-sm"
+          className={`fixed inset-0 z-50 flex ${
+            isReadingMode
+              ? 'items-stretch justify-center bg-surface-light dark:bg-brand-950'
+              : 'items-end sm:items-center justify-center bg-brand-950/70 backdrop-blur-sm'
+          }`}
           role="dialog"
           aria-modal="true"
           aria-label={`Hadith #${detailHadith.hadithNumber}`}
-          onClick={() => setDetailHadith(null)}
+          onClick={() => {
+            if (!isReadingMode) {
+              setDetailHadith(null);
+              setShowNoteEditor(false);
+            }
+          }}
         >
           <div
-            className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-t-3xl sm:rounded-3xl glass-strong shadow-2xl overflow-hidden"
+            onTouchStart={(e) => {
+              if (!isReadingMode) return;
+              touchStartRef.current = {
+                x: e.touches[0].clientX,
+                y: e.touches[0].clientY,
+              };
+            }}
+            onTouchEnd={(e) => {
+              if (!isReadingMode || !touchStartRef.current) return;
+              const dx = e.changedTouches[0].clientX - touchStartRef.current.x;
+              const dy = e.changedTouches[0].clientY - touchStartRef.current.y;
+              touchStartRef.current = null;
+              if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy)) {
+                navigateDetailHadith(dx < 0 ? 1 : -1);
+              }
+            }}
+            className={
+              isReadingMode
+                ? 'w-full h-full flex flex-col pt-safe pb-safe max-w-3xl mx-auto'
+                : 'w-full max-w-2xl max-h-[92vh] flex flex-col rounded-t-3xl sm:rounded-3xl glass-strong shadow-2xl overflow-hidden'
+            }
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header */}
-            <header className="flex items-center justify-between gap-2 px-5 py-3.5 border-b border-brand-500/15 dark:border-white/12">
-              <div className="min-w-0">
-                <h2 className="text-base font-bold text-ink dark:text-ink-dark truncate">
-                  {selectedCollection
-                    ? getCollectionTitle(selectedCollection)
-                    : 'Hadith'}{' '}
-                  · #{detailHadith.hadithNumber}
-                </h2>
-                <p className="text-xs text-muted dark:text-muted-dark truncate">
-                  {detailHadith.sectionTitle || selectedSection?.title || ''}{' '}
-                  {detailHadith.bookNumber ? `· Book ${detailHadith.bookNumber}` : ''}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setDetailHadith(null)}
-                aria-label="Close Hadith Detail"
-                className="min-h-[48px] min-w-[48px] flex items-center justify-center rounded-full hover:bg-brand-500/10 dark:hover:bg-white/10"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </header>
-
-            {/* Body */}
-            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-              {/* Font size control */}
-              <div className="rounded-2xl glass p-3 flex items-center gap-3">
-                <SlidersHorizontal className="w-4 h-4 text-brand-600 dark:text-accent shrink-0" />
-                <input
-                  type="range"
-                  min={18}
-                  max={36}
-                  value={hadithFontSize}
-                  onChange={(e) => setHadithFontSize(Number(e.target.value))}
-                  aria-label="Hadith font size"
-                  className="flex-1 md-slider bg-brand-900/15 dark:bg-white/20"
-                />
-                <span className="text-xs font-bold tabular-nums w-10 text-end">
-                  {hadithFontSize}px
+            {/* Header (Minimal in Reading Mode) */}
+            {isReadingMode ? (
+              <header className="flex items-center justify-between gap-2 px-4 py-3">
+                <span className="text-xs font-bold tabular-nums text-brand-700 dark:text-accent">
+                  #{detailHadith.hadithNumber}
                 </span>
-              </div>
 
-              {/* Text-to-Speech Player Bar */}
-              <div className="rounded-3xl glass p-4 space-y-3 border border-brand-500/20 dark:border-accent/25">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-xs font-bold text-ink dark:text-ink-dark flex items-center gap-1.5">
-                      <BookOpen className="w-4 h-4 text-brand-600 dark:text-accent" />
-                      <span>{t.hadith.listen}</span>
-                    </p>
-                    <p className="text-[11px] font-semibold text-accent-600 dark:text-accent mt-0.5">
-                      {t.hadith.ttsDisclaimer}
-                    </p>
-                  </div>
-
-                  {/* Language choice for TTS */}
-                  <div className="flex items-center gap-1 p-1 rounded-xl glass">
-                    {(['ar', 'en', 'bn'] as const).map((speakCode) => (
-                      <button
-                        key={speakCode}
-                        type="button"
-                        onClick={() => setTtsLang(speakCode)}
-                        className={`px-2.5 min-h-[34px] rounded-lg text-xs font-semibold ${
-                          ttsLang === speakCode
-                            ? 'bg-brand-600 text-white dark:bg-accent dark:text-brand-950'
-                            : 'text-muted dark:text-muted-dark'
-                        }`}
-                      >
-                        {speakCode.toUpperCase()}
-                      </button>
-                    ))}
-                  </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={detailIndex <= 0}
+                    onClick={() => navigateDetailHadith(-1)}
+                    aria-label="Previous Hadith"
+                    className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full glass disabled:opacity-30"
+                  >
+                    <ChevronLeft className="w-5 h-5 rtl:rotate-180" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={detailIndex < 0 || detailIndex >= activeHadithList.length - 1}
+                    onClick={() => navigateDetailHadith(1)}
+                    aria-label="Next Hadith"
+                    className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full glass disabled:opacity-30"
+                  >
+                    <ChevronRight className="w-5 h-5 rtl:rotate-180" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsReadingMode(false)}
+                    aria-label={t.hadith.exitReadingMode}
+                    className="min-h-[44px] px-3.5 rounded-full glass text-xs font-semibold flex items-center gap-1.5"
+                  >
+                    <Minimize2 className="w-4 h-4" />
+                    <span>{t.hadith.exitReadingMode}</span>
+                  </button>
+                </div>
+              </header>
+            ) : (
+              <header className="flex items-center justify-between gap-2 px-5 py-3.5 border-b border-brand-500/15 dark:border-white/12">
+                <div className="min-w-0">
+                  <h2 className="text-base font-bold text-ink dark:text-ink-dark truncate">
+                    {selectedCollection ? getCollectionTitle(selectedCollection) : 'Hadith'} · #
+                    {detailHadith.hadithNumber}
+                  </h2>
+                  <p className="text-xs text-muted dark:text-muted-dark truncate">
+                    {detailHadith.sectionTitle || selectedSection?.title || ''}{' '}
+                    {detailHadith.bookNumber ? `· Book ${detailHadith.bookNumber}` : ''}
+                  </p>
                 </div>
 
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (
-                          ttsSpeakingNumber === detailHadith.hadithNumber &&
-                          ttsStatus !== 'idle'
-                        ) {
-                          void handleToggleTtsPause();
-                        } else {
-                          void speakHadith(detailHadith, ttsLang);
-                        }
-                      }}
-                      className="md-ripple inline-flex items-center gap-2 px-4 min-h-[44px] rounded-2xl bg-brand-600 text-white dark:bg-accent dark:text-brand-950 text-xs font-semibold"
-                    >
-                      {ttsSpeakingNumber === detailHadith.hadithNumber && ttsStatus === 'playing' ? (
-                        <Pause className="w-4 h-4 fill-current" />
-                      ) : (
-                        <Play className="w-4 h-4 fill-current" />
-                      )}
-                      <span>
-                        {ttsSpeakingNumber === detailHadith.hadithNumber && ttsStatus === 'playing'
-                          ? pickLang(lang, 'Pause', 'إيقاف مؤقت', 'বিরতি')
-                          : t.hadith.listen}
-                      </span>
-                    </button>
-
-                    {ttsStatus !== 'idle' && (
-                      <button
-                        type="button"
-                        onClick={handleStopTts}
-                        className="min-h-[44px] px-3.5 rounded-2xl glass text-xs font-semibold text-rose-500"
-                      >
-                        {t.hadith.stopListening}
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Speed selector */}
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsReadingMode(true)}
+                    aria-label={t.hadith.readingMode}
+                    className="min-h-[44px] px-3 rounded-2xl glass text-xs font-semibold text-brand-700 dark:text-accent flex items-center gap-1.5"
+                  >
+                    <Maximize2 className="w-4 h-4" />
+                    <span className="hidden sm:inline">{t.hadith.readingMode}</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
-                      const idx = TTS_SPEEDS.indexOf(hadithTtsSpeed);
-                      setHadithTtsSpeed(TTS_SPEEDS[(idx + 1) % TTS_SPEEDS.length]);
+                      setDetailHadith(null);
+                      setShowNoteEditor(false);
                     }}
-                    className="min-h-[44px] px-3.5 rounded-2xl glass text-xs font-bold tabular-nums"
+                    aria-label="Close Hadith Detail"
+                    className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full hover:bg-brand-500/10 dark:hover:bg-white/10"
                   >
-                    {hadithTtsSpeed}x
+                    <X className="w-5 h-5" />
                   </button>
                 </div>
+              </header>
+            )}
 
-                <label className="flex items-center gap-2 text-xs font-medium cursor-pointer pt-1">
+            {/* Body */}
+            <div
+              className={`flex-1 overflow-y-auto px-5 space-y-5 ${
+                isReadingMode ? 'py-6 sm:px-10' : 'py-4'
+              }`}
+            >
+              {/* Font size & Line height controls */}
+              <div className="rounded-2xl glass p-3 space-y-2.5">
+                <div className="flex items-center gap-3">
+                  <SlidersHorizontal className="w-4 h-4 text-brand-600 dark:text-accent shrink-0" />
                   <input
-                    type="checkbox"
-                    checked={hadithAutoNext}
-                    onChange={(e) => setHadithAutoNext(e.target.checked)}
-                    className="w-4 h-4 accent-brand-600 dark:accent-accent"
+                    type="range"
+                    min={18}
+                    max={40}
+                    value={hadithFontSize}
+                    onChange={(e) => setHadithFontSize(Number(e.target.value))}
+                    aria-label="Hadith font size"
+                    className="flex-1 md-slider bg-brand-900/15 dark:bg-white/20"
                   />
-                  <span>{t.hadith.ttsAutoNext}</span>
-                </label>
+                  <span className="text-xs font-bold tabular-nums w-11 text-end">
+                    {hadithFontSize}px
+                  </span>
+                </div>
+
+                {isReadingMode && (
+                  <div className="flex items-center gap-3">
+                    <Eye className="w-4 h-4 text-brand-600 dark:text-accent shrink-0" />
+                    <span className="text-[11px] font-medium text-muted dark:text-muted-dark shrink-0">
+                      {t.hadith.lineHeight}
+                    </span>
+                    <input
+                      type="range"
+                      min={1.4}
+                      max={2.5}
+                      step={0.1}
+                      value={hadithLineHeight}
+                      onChange={(e) => setHadithLineHeight(Number(e.target.value))}
+                      aria-label={t.hadith.lineHeight}
+                      className="flex-1 md-slider bg-brand-900/15 dark:bg-white/20"
+                    />
+                    <span className="text-xs font-bold tabular-nums w-11 text-end">
+                      {hadithLineHeight.toFixed(1)}
+                    </span>
+                  </div>
+                )}
               </div>
+
+              {/* Experimental English-Only Device Voice Bar */}
+              {!isReadingMode && allowEnglishTts && Boolean(detailHadith.englishText) && (
+                <div className="rounded-3xl glass p-4 space-y-3 border border-brand-500/20 dark:border-accent/25">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-bold text-ink dark:text-ink-dark flex items-center gap-1.5">
+                        <Volume2 className="w-4 h-4 text-brand-600 dark:text-accent" />
+                        <span>{t.hadith.listen}</span>
+                      </p>
+                      <p className="text-[11px] font-semibold text-accent-600 dark:text-accent mt-0.5">
+                        {t.hadith.ttsDisclaimer}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const idx = TTS_SPEEDS.indexOf(hadithTtsSpeed);
+                        setHadithTtsSpeed(TTS_SPEEDS[(idx + 1) % TTS_SPEEDS.length]);
+                      }}
+                      className="min-h-[40px] px-3 rounded-2xl glass text-xs font-bold tabular-nums"
+                    >
+                      {hadithTtsSpeed}x
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (
+                            ttsSpeakingNumber === detailHadith.hadithNumber &&
+                            ttsStatus !== 'idle'
+                          ) {
+                            void handleToggleTtsPause();
+                          } else {
+                            void speakHadithEnglish(detailHadith);
+                          }
+                        }}
+                        className="md-ripple inline-flex items-center gap-2 px-4 min-h-[44px] rounded-2xl bg-brand-600 text-white dark:bg-accent dark:text-brand-950 text-xs font-semibold"
+                      >
+                        {ttsSpeakingNumber === detailHadith.hadithNumber && ttsStatus === 'playing' ? (
+                          <Pause className="w-4 h-4 fill-current" />
+                        ) : (
+                          <Play className="w-4 h-4 fill-current" />
+                        )}
+                        <span>
+                          {ttsSpeakingNumber === detailHadith.hadithNumber && ttsStatus === 'playing'
+                            ? pickLang(lang, 'Pause', 'إيقاف مؤقت', 'বিরতি')
+                            : t.hadith.listen}
+                        </span>
+                      </button>
+
+                      {ttsStatus !== 'idle' && (
+                        <button
+                          type="button"
+                          onClick={handleStopTts}
+                          className="min-h-[44px] px-3.5 rounded-2xl glass text-xs font-semibold text-rose-500"
+                        >
+                          {t.hadith.stopListening}
+                        </button>
+                      )}
+                    </div>
+
+                    <label className="flex items-center gap-2 text-xs font-medium cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={hadithAutoNext}
+                        onChange={(e) => setHadithAutoNext(e.target.checked)}
+                        className="w-4 h-4 accent-brand-600 dark:accent-accent"
+                      />
+                      <span>{t.hadith.ttsAutoNext}</span>
+                    </label>
+                  </div>
+                </div>
+              )}
 
               {/* Arabic Text */}
               {detailHadith.arabicText && (
                 <p
                   dir="rtl"
-                  className="font-hadith-amiri text-right leading-[2.05] text-ink dark:text-ink-dark select-text"
-                  style={{fontSize: `${hadithFontSize}px`}}
+                  className="font-hadith-amiri text-right text-ink dark:text-ink-dark select-text"
+                  style={{
+                    fontSize: `${isReadingMode ? Math.max(hadithFontSize, 26) : hadithFontSize}px`,
+                    lineHeight: hadithLineHeight,
+                  }}
                 >
                   {detailHadith.arabicText}
                 </p>
@@ -1199,10 +1323,17 @@ export const HadithScreen: React.FC = () => {
               {/* English Text */}
               {detailHadith.englishText && (
                 <div className="space-y-1">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-brand-700 dark:text-accent">
-                    English
-                  </p>
-                  <p className="text-sm sm:text-base leading-relaxed text-ink/90 dark:text-ink-dark/90 select-text">
+                  {!isReadingMode && (
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-brand-700 dark:text-accent">
+                      English
+                    </p>
+                  )}
+                  <p
+                    className={`leading-relaxed text-ink/90 dark:text-ink-dark/90 select-text ${
+                      isReadingMode ? 'text-base sm:text-lg' : 'text-sm sm:text-base'
+                    }`}
+                    style={isReadingMode ? {lineHeight: hadithLineHeight * 0.92} : undefined}
+                  >
                     {detailHadith.englishText}
                   </p>
                 </div>
@@ -1211,69 +1342,170 @@ export const HadithScreen: React.FC = () => {
               {/* Bangla Text */}
               {detailHadith.banglaText && (
                 <div className="space-y-1 pt-2 border-t border-brand-500/12 dark:border-white/10">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-brand-700 dark:text-accent font-bengali">
-                    বাংলা
-                  </p>
-                  <p className="font-bengali text-sm sm:text-base leading-relaxed text-ink/90 dark:text-ink-dark/90 select-text">
+                  {!isReadingMode && (
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-brand-700 dark:text-accent font-bengali">
+                      বাংলা
+                    </p>
+                  )}
+                  <p
+                    className={`font-bengali leading-relaxed text-ink/90 dark:text-ink-dark/90 select-text ${
+                      isReadingMode ? 'text-base sm:text-lg' : 'text-sm sm:text-base'
+                    }`}
+                    style={isReadingMode ? {lineHeight: hadithLineHeight * 0.92} : undefined}
+                  >
                     {detailHadith.banglaText}
                   </p>
                 </div>
               )}
 
-              {/* Grades & Reference */}
-              <div className="rounded-2xl glass p-3.5 space-y-2 text-xs">
-                <p>
-                  <span className="font-bold text-brand-700 dark:text-accent">
-                    {t.hadith.referenceLabel}:{' '}
-                  </span>
-                  {selectedCollection ? getCollectionTitle(selectedCollection) : ''} · Hadith #
-                  {detailHadith.hadithNumber}
-                  {detailHadith.bookNumber ? ` (Book ${detailHadith.bookNumber})` : ''}
+              {isReadingMode && (
+                <p className="text-center text-xs text-muted dark:text-muted-dark pt-4">
+                  {t.hadith.swipeHint}
                 </p>
-                {detailHadith.grades.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    <span className="font-bold text-brand-700 dark:text-accent">
-                      {t.hadith.gradeLabel}:
-                    </span>
-                    {detailHadith.grades.map((g, i) => (
-                      <span key={i} className="px-2 py-0.5 rounded-lg glass">
-                        {g.name}: {g.grade}
+              )}
+
+              {/* Note & Grades (hidden in calm reading mode) */}
+              {!isReadingMode && (
+                <>
+                  {(existingDetailNote || showNoteEditor) && (
+                    <div className="rounded-2xl glass p-3.5 space-y-2">
+                      {showNoteEditor ? (
+                        <>
+                          <textarea
+                            value={noteDraft}
+                            onChange={(e) => setNoteDraft(e.target.value)}
+                            rows={2}
+                            placeholder={pickLang(
+                              lang,
+                              'Write a note for this hadith...',
+                              'اكتب ملاحظة حول هذا الحديث...',
+                              'এই হাদিস সম্পর্কে নোট লিখুন...'
+                            )}
+                            className="w-full rounded-2xl glass p-3 text-xs sm:text-sm outline-none focus:ring-2 focus:ring-brand-500 dark:focus:ring-accent"
+                          />
+                          <div className="flex justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setShowNoteEditor(false)}
+                              className="px-3.5 min-h-[38px] rounded-xl glass text-xs font-semibold"
+                            >
+                              {t.library.cancel}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setHadithNote(detailNoteKey, noteDraft);
+                                setShowNoteEditor(false);
+                                showToast(pickLang(lang, 'Note saved', 'تم الحفظ', 'নোট সংরক্ষিত'));
+                              }}
+                              className="px-4 min-h-[38px] rounded-xl bg-brand-600 text-white dark:bg-accent dark:text-brand-950 text-xs font-semibold"
+                            >
+                              {pickLang(lang, 'Save Note', 'حفظ', 'সংরক্ষণ')}
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-xs text-ink/90 dark:text-ink-dark/90">
+                          <span className="font-bold text-brand-700 dark:text-accent me-1">
+                            {pickLang(lang, 'Note:', 'ملاحظة:', 'নোট:')}
+                          </span>
+                          {existingDetailNote}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="rounded-2xl glass p-3.5 space-y-2 text-xs">
+                    <p>
+                      <span className="font-bold text-brand-700 dark:text-accent">
+                        {t.hadith.referenceLabel}:{' '}
                       </span>
-                    ))}
+                      {selectedCollection ? getCollectionTitle(selectedCollection) : ''} · Hadith #
+                      {detailHadith.hadithNumber}
+                      {detailHadith.bookNumber ? ` (Book ${detailHadith.bookNumber})` : ''}
+                    </p>
+                    {detailHadith.grades.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        <span className="font-bold text-brand-700 dark:text-accent">
+                          {t.hadith.gradeLabel}:
+                        </span>
+                        {detailHadith.grades.map((g, i) => (
+                          <span key={i} className="px-2 py-0.5 rounded-lg glass">
+                            {g.name}: {g.grade}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                </>
+              )}
             </div>
 
-            {/* Footer actions */}
-            <footer className="px-5 py-3 border-t border-brand-500/15 dark:border-white/12 flex items-center justify-end gap-2 pb-safe">
-              <button
-                type="button"
-                onClick={() =>
-                  handleCopyHadith(
-                    detailHadith,
-                    selectedCollection ? getCollectionTitle(selectedCollection) : undefined
-                  )
-                }
-                className="md-ripple inline-flex items-center gap-1.5 px-4 min-h-[44px] rounded-2xl glass text-xs font-semibold"
-              >
-                <Copy className="w-4 h-4" />
-                <span>{pickLang(lang, 'Copy', 'نسخ', 'কপি')}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  handleShareHadith(
-                    detailHadith,
-                    selectedCollection ? getCollectionTitle(selectedCollection) : undefined
-                  )
-                }
-                className="md-ripple inline-flex items-center gap-1.5 px-4 min-h-[44px] rounded-2xl glass text-xs font-semibold"
-              >
-                <Share2 className="w-4 h-4" />
-                <span>{pickLang(lang, 'Share', 'مشاركة', 'শেয়ার')}</span>
-              </button>
-            </footer>
+            {/* Footer actions (hidden in calm reading mode) */}
+            {!isReadingMode && (
+              <footer className="px-5 py-3 border-t border-brand-500/15 dark:border-white/12 flex items-center justify-between gap-2 pb-safe">
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={detailIndex <= 0}
+                    onClick={() => navigateDetailHadith(-1)}
+                    aria-label="Previous Hadith"
+                    className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-2xl glass disabled:opacity-35"
+                  >
+                    <ChevronLeft className="w-4 h-4 rtl:rotate-180" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={detailIndex < 0 || detailIndex >= activeHadithList.length - 1}
+                    onClick={() => navigateDetailHadith(1)}
+                    aria-label="Next Hadith"
+                    className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-2xl glass disabled:opacity-35"
+                  >
+                    <ChevronRight className="w-4 h-4 rtl:rotate-180" />
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNoteDraft(existingDetailNote);
+                      setShowNoteEditor((v) => !v);
+                    }}
+                    className="md-ripple inline-flex items-center gap-1.5 px-3.5 min-h-[44px] rounded-2xl glass text-xs font-semibold"
+                  >
+                    <StickyNote className="w-4 h-4" />
+                    <span>{pickLang(lang, 'Note', 'ملاحظة', 'নোট')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleCopyHadith(
+                        detailHadith,
+                        selectedCollection ? getCollectionTitle(selectedCollection) : undefined
+                      )
+                    }
+                    className="md-ripple inline-flex items-center gap-1.5 px-3.5 min-h-[44px] rounded-2xl glass text-xs font-semibold"
+                  >
+                    <Copy className="w-4 h-4" />
+                    <span>{pickLang(lang, 'Copy', 'نسخ', 'কপি')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleShareHadith(
+                        detailHadith,
+                        selectedCollection ? getCollectionTitle(selectedCollection) : undefined
+                      )
+                    }
+                    className="md-ripple inline-flex items-center gap-1.5 px-3.5 min-h-[44px] rounded-2xl glass text-xs font-semibold"
+                  >
+                    <Share2 className="w-4 h-4" />
+                    <span>{pickLang(lang, 'Share', 'مشاركة', 'শেয়ার')}</span>
+                  </button>
+                </div>
+              </footer>
+            )}
           </div>
         </div>
       )}

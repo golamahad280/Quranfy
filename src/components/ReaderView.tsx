@@ -1,21 +1,27 @@
 import {
   ArrowLeft,
+  Bookmark,
   BookText,
   Check,
   ChevronLeft,
   ChevronRight,
+  Copy,
   Download,
   Heart,
+  Image as ImageIcon,
   Loader2,
   Pause,
   Play,
   Repeat,
   RotateCcw,
+  Share2,
   Sliders,
+  StickyNote,
   Type,
+  UserCheck,
   Volume2,
 } from 'lucide-react';
-import React, {useEffect, useRef, useState} from 'react';
+import React, {lazy, Suspense, useEffect, useRef, useState} from 'react';
 import {pickLang, TRANSLATIONS} from '../data/i18n';
 import {TRANSLATION_OPTIONS} from '../data/recitersAndPlaylists';
 import {audioManager} from '../services/audioManager';
@@ -27,13 +33,20 @@ import {
 } from '../services/quranApi';
 import {useQuranStore} from '../store/useQuranStore';
 import {SurahDetail} from '../types/quran';
-import {TafsirSheet} from './TafsirSheet';
+import {ReciterPickerSheet} from './ReciterPickerSheet';
+
+const TafsirSheet = lazy(() => import('./TafsirSheet').then((m) => ({default: m.TafsirSheet})));
+
+const SPEED_STEPS = [0.75, 0.9, 1, 1.25, 1.5, 2];
 
 export const ReaderView: React.FC = () => {
   const readerSurahNumber = useQuranStore((s) => s.readerSurahNumber);
+  const readerTargetAyahNumber = useQuranStore((s) => s.readerTargetAyahNumber);
   const closeReader = useQuranStore((s) => s.closeReader);
   const openReader = useQuranStore((s) => s.openReader);
   const openTafsirSheet = useQuranStore((s) => s.openTafsirSheet);
+  const openShareImageModal = useQuranStore((s) => s.openShareImageModal);
+  const setLastReadQuran = useQuranStore((s) => s.setLastReadQuran);
   const surahs = useQuranStore((s) => s.surahs);
   const reciters = useQuranStore((s) => s.reciters);
   const currentSurahNumber = useQuranStore((s) => s.currentSurahNumber);
@@ -42,12 +55,15 @@ export const ReaderView: React.FC = () => {
   const currentAyahNumber = useQuranStore((s) => s.currentAyahNumber);
   const isPlaying = useQuranStore((s) => s.isPlaying);
   const isLoadingAudio = useQuranStore((s) => s.isLoadingAudio);
+  const playbackSpeed = useQuranStore((s) => s.playbackSpeed);
   const ayahRepeatTarget = useQuranStore((s) => s.ayahRepeatTarget);
   const ayahRangeEnabled = useQuranStore((s) => s.ayahRangeEnabled);
   const ayahRangeStart = useQuranStore((s) => s.ayahRangeStart);
   const ayahRangeEnd = useQuranStore((s) => s.ayahRangeEnd);
   const continueToNextAyah = useQuranStore((s) => s.continueToNextAyah);
   const favoriteAyahs = useQuranStore((s) => s.favoriteAyahs);
+  const bookmarkedAyahs = useQuranStore((s) => s.bookmarkedAyahs);
+  const ayahNotes = useQuranStore((s) => s.ayahNotes);
   const favoriteSurahNumbers = useQuranStore((s) => s.favoriteSurahNumbers);
   const downloadedKeys = useQuranStore((s) => s.downloadedKeys);
   const downloadProgress = useQuranStore((s) => s.downloadProgress);
@@ -57,6 +73,8 @@ export const ReaderView: React.FC = () => {
   const setAyahRange = useQuranStore((s) => s.setAyahRange);
   const setContinueToNextAyah = useQuranStore((s) => s.setContinueToNextAyah);
   const toggleFavoriteAyah = useQuranStore((s) => s.toggleFavoriteAyah);
+  const toggleBookmarkedAyah = useQuranStore((s) => s.toggleBookmarkedAyah);
+  const setAyahNote = useQuranStore((s) => s.setAyahNote);
   const toggleFavoriteSurah = useQuranStore((s) => s.toggleFavoriteSurah);
   const updateSettings = useQuranStore((s) => s.updateSettings);
   const setDownloadProgress = useQuranStore((s) => s.setDownloadProgress);
@@ -70,6 +88,10 @@ export const ReaderView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [showDisplayPanel, setShowDisplayPanel] = useState(false);
   const [showAyahControls, setShowAyahControls] = useState(false);
+  const [showReciterPicker, setShowReciterPicker] = useState(false);
+  const [editingNoteKey, setEditingNoteKey] = useState<string | null>(null);
+  const [noteDraft, setNoteDraft] = useState('');
+  const [selectedAyahNum, setSelectedAyahNum] = useState<number>(1);
   const [retryCount, setRetryCount] = useState(0);
 
   const ayahRefs = useRef<Record<number, HTMLDivElement | null>>({});
@@ -82,6 +104,7 @@ export const ReaderView: React.FC = () => {
     let active = true;
     setLoading(true);
     setError(null);
+    setSelectedAyahNum(readerTargetAyahNumber || 1);
 
     fetchSurahWithTranslation(readerSurahNumber, settings.translationEdition)
       .then((res) => {
@@ -107,9 +130,8 @@ export const ReaderView: React.FC = () => {
     return () => {
       active = false;
     };
-  }, [readerSurahNumber, settings.translationEdition, lang, retryCount]);
+  }, [readerSurahNumber, readerTargetAyahNumber, settings.translationEdition, lang, retryCount]);
 
-  // Fetch Bangla Quran translation (ben-muhiuddinkhan) whenever enabled
   useEffect(() => {
     if (!readerSurahNumber || !settings.showBanglaTranslation) {
       return;
@@ -142,7 +164,19 @@ export const ReaderView: React.FC = () => {
     };
   }, [readerSurahNumber, settings.showBanglaTranslation, lang, showToast]);
 
-  // Smoothly auto-scroll to the active playing ayah
+  // Scroll to target ayah when opening from Continue Reading, Juz, Bookmarks, or Search
+  useEffect(() => {
+    if (!readerSurahNumber || !detail || !readerTargetAyahNumber) return;
+    const timer = window.setTimeout(() => {
+      ayahRefs.current[readerTargetAyahNumber]?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [readerSurahNumber, detail, readerTargetAyahNumber]);
+
+  // Smoothly auto-scroll to active playing ayah
   useEffect(() => {
     if (
       readerSurahNumber &&
@@ -150,12 +184,14 @@ export const ReaderView: React.FC = () => {
       playMode === 'ayah' &&
       ayahRefs.current[currentAyahNumber]
     ) {
+      setSelectedAyahNum(currentAyahNumber);
+      setLastReadQuran(readerSurahNumber, currentAyahNumber);
       ayahRefs.current[currentAyahNumber]?.scrollIntoView({
         behavior: 'smooth',
         block: 'center',
       });
     }
-  }, [readerSurahNumber, currentSurahNumber, playMode, currentAyahNumber]);
+  }, [readerSurahNumber, currentSurahNumber, playMode, currentAyahNumber, setLastReadQuran]);
 
   if (!readerSurahNumber) return null;
 
@@ -195,6 +231,38 @@ export const ReaderView: React.FC = () => {
     }
   };
 
+  const handleCopyAyah = async (ayahNum: number, arabic: string, translation: string, bn?: string) => {
+    const parts = [`${surah.englishName} (${surah.number}:${ayahNum})`, arabic];
+    if (translation) parts.push(translation);
+    if (settings.showBanglaTranslation && bn) parts.push(bn);
+    try {
+      await navigator.clipboard.writeText(parts.join('\n\n'));
+    } catch {
+      // ignore clipboard fallback
+    }
+    showToast(pickLang(lang, 'Ayah copied', 'تم نسخ الآية', 'আয়াত কপি হয়েছে'));
+  };
+
+  const handleShareAyah = async (ayahNum: number, arabic: string, translation: string, bn?: string) => {
+    const parts = [`${surah.englishName} (${surah.number}:${ayahNum})`, arabic];
+    if (translation) parts.push(translation);
+    if (settings.showBanglaTranslation && bn) parts.push(bn);
+    const text = parts.join('\n\n');
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `${surah.englishName} ${surah.number}:${ayahNum}`,
+          text,
+        });
+        return;
+      } catch {
+        // fallback to copy
+      }
+    }
+    await handleCopyAyah(ayahNum, arabic, translation, bn);
+  };
+
   const fontClass =
     settings.arabicFont === 'scheherazade' ? 'font-quran-scheherazade' : 'font-quran-amiri';
 
@@ -222,6 +290,15 @@ export const ReaderView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-0.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowReciterPicker(true)}
+            aria-label={t.player.switchReciter}
+            className="min-h-[48px] min-w-[44px] flex items-center justify-center rounded-full hover:bg-brand-500/10 dark:hover:bg-white/10 text-brand-600 dark:text-accent"
+          >
+            <UserCheck className="w-5 h-5" />
+          </button>
+
           <button
             type="button"
             onClick={() => toggleFavoriteSurah(surah.number)}
@@ -256,7 +333,7 @@ export const ReaderView: React.FC = () => {
               setShowAyahControls((v) => !v);
               setShowDisplayPanel(false);
             }}
-            aria-label="Ayah Repeat Controls"
+            aria-label="Tilawat Repeat Controls"
             className={`min-h-[48px] min-w-[44px] flex items-center justify-center rounded-full ${
               showAyahControls || ayahRangeEnabled || ayahRepeatTarget > 1
                 ? 'bg-brand-600/14 text-brand-700 dark:bg-accent/20 dark:text-accent'
@@ -330,7 +407,6 @@ export const ReaderView: React.FC = () => {
               </div>
             </div>
 
-            {/* Independent Arabic, English, Bangla combination checkboxes */}
             <div className="pt-2 border-t border-brand-500/10 dark:border-white/10 space-y-2.5">
               <div className="flex flex-wrap items-center gap-4">
                 <label className="flex items-center gap-2 text-xs sm:text-sm font-medium cursor-pointer min-h-[44px]">
@@ -381,7 +457,7 @@ export const ReaderView: React.FC = () => {
         </div>
       )}
 
-      {/* Ayah-by-Ayah Repeat & Range Drawer */}
+      {/* Ayah-by-Ayah Tilawat Options Drawer */}
       {showAyahControls && (
         <div className="border-b border-brand-500/15 dark:border-white/12 glass-strong px-4 py-4">
           <div className="max-w-3xl mx-auto space-y-3">
@@ -466,7 +542,7 @@ export const ReaderView: React.FC = () => {
       )}
 
       {/* Scrollable Surah Text Body */}
-      <main className="flex-1 overflow-y-auto px-4 pb-32 pt-5">
+      <main className="flex-1 overflow-y-auto px-4 pb-36 pt-5">
         <div className="max-w-3xl mx-auto">
           {/* Surah Banner Card */}
           <div className="rounded-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-900 text-white p-6 text-center shadow-lg border border-white/15 mb-6">
@@ -485,7 +561,7 @@ export const ReaderView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
-                  if (isCurrentSurahPlaying) {
+                  if (isCurrentSurahPlaying && playMode === 'surah') {
                     audioManager.pause();
                   } else {
                     audioManager.playSurah(surah.number, reciter.id, 0);
@@ -506,7 +582,7 @@ export const ReaderView: React.FC = () => {
                 onClick={() =>
                   audioManager.playAyah(
                     surah.number,
-                    currentSurahNumber === surah.number ? currentAyahNumber : 1,
+                    currentSurahNumber === surah.number ? currentAyahNumber : selectedAyahNum,
                     reciter.id
                   )
                 }
@@ -514,6 +590,17 @@ export const ReaderView: React.FC = () => {
               >
                 <Volume2 className="w-4 h-4" />
                 <span>{t.player.ayahByAyah}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowReciterPicker(true)}
+                className="md-ripple inline-flex items-center gap-2 px-4 min-h-[48px] rounded-2xl bg-white/15 hover:bg-white/25 text-white text-xs font-semibold backdrop-blur-md"
+              >
+                <UserCheck className="w-4 h-4" />
+                <span className="truncate max-w-[160px]">
+                  {lang === 'ar' ? reciter.nameAr : reciter.nameEn}
+                </span>
               </button>
             </div>
           </div>
@@ -562,8 +649,11 @@ export const ReaderView: React.FC = () => {
                   playMode === 'ayah' &&
                   currentAyahNumber === ayah.numberInSurah;
 
-                const favId = `${surah.number}:${ayah.numberInSurah}`;
-                const isFavAyah = favoriteAyahs.some((a) => a.id === favId);
+                const ayahKey = `${surah.number}:${ayah.numberInSurah}`;
+                const isFavAyah = favoriteAyahs.some((a) => a.id === ayahKey);
+                const isBookmarked = bookmarkedAyahs.some((b) => b.id === ayahKey);
+                const existingNote = ayahNotes[ayahKey] || '';
+                const isEditingNote = editingNoteKey === ayahKey;
                 const bnText = banglaVerses?.[ayah.numberInSurah];
 
                 return (
@@ -572,17 +662,28 @@ export const ReaderView: React.FC = () => {
                     ref={(el) => {
                       ayahRefs.current[ayah.numberInSurah] = el;
                     }}
+                    onClick={() => {
+                      setSelectedAyahNum(ayah.numberInSurah);
+                      setLastReadQuran(surah.number, ayah.numberInSurah);
+                    }}
                     className={`rounded-3xl p-4 sm:p-5 transition-colors border ${
                       isActiveAyah
                         ? 'bg-brand-600/12 dark:bg-accent/14 border-brand-500/45 dark:border-accent/45 shadow-md'
                         : 'glass'
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-2 mb-3">
-                      <div className="flex items-center gap-1.5">
+                    {/* Ayah Top Action Strip */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <button
                           type="button"
-                          onClick={() => audioManager.playAyah(surah.number, ayah.numberInSurah, reciter.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedAyahNum(ayah.numberInSurah);
+                            setLastReadQuran(surah.number, ayah.numberInSurah);
+                            audioManager.playAyah(surah.number, ayah.numberInSurah, reciter.id);
+                          }}
+                          aria-label={`${t.player.playFromHere} ${ayahKey}`}
                           className={`md-ripple inline-flex items-center gap-2 px-3.5 min-h-[42px] rounded-2xl text-xs font-bold tabular-nums ${
                             isActiveAyah
                               ? 'bg-brand-600 text-white dark:bg-accent dark:text-brand-950'
@@ -596,16 +697,15 @@ export const ReaderView: React.FC = () => {
                           ) : (
                             <Play className="w-3.5 h-3.5 fill-current" />
                           )}
-                          <span>
-                            {surah.number}:{ayah.numberInSurah}
-                          </span>
+                          <span>{ayahKey}</span>
                         </button>
 
                         <button
                           type="button"
-                          onClick={() =>
-                            openTafsirSheet(surah.number, ayah.numberInSurah, ayah.text)
-                          }
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openTafsirSheet(surah.number, ayah.numberInSurah, ayah.text);
+                          }}
                           className="md-ripple inline-flex items-center gap-1.5 px-3 min-h-[42px] rounded-2xl glass text-xs font-semibold text-brand-700 dark:text-accent hover:bg-brand-500/10 dark:hover:bg-white/12"
                         >
                           <BookText className="w-3.5 h-3.5" />
@@ -613,37 +713,143 @@ export const ReaderView: React.FC = () => {
                         </button>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() =>
-                          toggleFavoriteAyah({
-                            id: favId,
-                            surahNumber: surah.number,
-                            ayahNumber: ayah.numberInSurah,
-                            surahNameEn: surah.englishName,
-                            surahNameAr: surah.name,
-                            arabicText: ayah.text,
-                            translationText: ayah.translation,
-                            savedAt: Date.now(),
-                          })
-                        }
-                        aria-label="Favorite Ayah"
-                        className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full hover:bg-brand-500/10 dark:hover:bg-white/10"
-                      >
-                        <Heart
-                          className={`w-4 h-4 ${
-                            isFavAyah ? 'fill-accent text-accent' : 'text-muted dark:text-muted-dark'
-                          }`}
-                        />
-                      </button>
+                      {/* Bookmark, Note, Copy, Share, Share Image, Favorite */}
+                      <div className="flex items-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleBookmarkedAyah({
+                              id: ayahKey,
+                              surahNumber: surah.number,
+                              ayahNumber: ayah.numberInSurah,
+                              surahNameEn: surah.englishName,
+                              surahNameAr: surah.name,
+                              arabicText: ayah.text,
+                              translationText: ayah.translation,
+                              savedAt: Date.now(),
+                            });
+                            showToast(
+                              isBookmarked
+                                ? pickLang(lang, 'Bookmark removed', 'تمت إزالة العلامة', 'বুকমার্ক সরানো হয়েছে')
+                                : pickLang(lang, 'Ayah bookmarked', 'تم وضع علامة على الآية', 'আয়াত বুকমার্ক করা হয়েছে')
+                            );
+                          }}
+                          aria-label="Bookmark Ayah"
+                          className="min-h-[42px] min-w-[40px] flex items-center justify-center rounded-full hover:bg-brand-500/10 dark:hover:bg-white/10"
+                        >
+                          <Bookmark
+                            className={`w-4 h-4 ${
+                              isBookmarked
+                                ? 'fill-brand-600 text-brand-600 dark:fill-accent dark:text-accent'
+                                : 'text-muted dark:text-muted-dark'
+                            }`}
+                          />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (isEditingNote) {
+                              setEditingNoteKey(null);
+                            } else {
+                              setEditingNoteKey(ayahKey);
+                              setNoteDraft(existingNote);
+                            }
+                          }}
+                          aria-label="Ayah Note"
+                          className="min-h-[42px] min-w-[40px] flex items-center justify-center rounded-full hover:bg-brand-500/10 dark:hover:bg-white/10"
+                        >
+                          <StickyNote
+                            className={`w-4 h-4 ${
+                              existingNote
+                                ? 'text-brand-600 dark:text-accent'
+                                : 'text-muted dark:text-muted-dark'
+                            }`}
+                          />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleCopyAyah(ayah.numberInSurah, ayah.text, ayah.translation, bnText);
+                          }}
+                          aria-label="Copy Ayah"
+                          className="min-h-[42px] min-w-[40px] flex items-center justify-center rounded-full hover:bg-brand-500/10 dark:hover:bg-white/10 text-muted dark:text-muted-dark"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleShareAyah(ayah.numberInSurah, ayah.text, ayah.translation, bnText);
+                          }}
+                          aria-label="Share Ayah"
+                          className="min-h-[42px] min-w-[40px] flex items-center justify-center rounded-full hover:bg-brand-500/10 dark:hover:bg-white/10 text-muted dark:text-muted-dark"
+                        >
+                          <Share2 className="w-4 h-4" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openShareImageModal({
+                              surahNameEn: surah.englishName,
+                              surahNameAr: surah.name,
+                              surahNumber: surah.number,
+                              ayahNumber: ayah.numberInSurah,
+                              arabicText: ayah.text,
+                              translationText:
+                                lang === 'bn' && bnText ? bnText : ayah.translation || bnText || '',
+                            });
+                          }}
+                          aria-label="Share as image"
+                          className="min-h-[42px] min-w-[40px] flex items-center justify-center rounded-full hover:bg-brand-500/10 dark:hover:bg-white/10 text-muted dark:text-muted-dark"
+                        >
+                          <ImageIcon className="w-4 h-4" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleFavoriteAyah({
+                              id: ayahKey,
+                              surahNumber: surah.number,
+                              ayahNumber: ayah.numberInSurah,
+                              surahNameEn: surah.englishName,
+                              surahNameAr: surah.name,
+                              arabicText: ayah.text,
+                              translationText: ayah.translation,
+                              savedAt: Date.now(),
+                            });
+                          }}
+                          aria-label="Favorite Ayah"
+                          className="min-h-[42px] min-w-[40px] flex items-center justify-center rounded-full hover:bg-brand-500/10 dark:hover:bg-white/10"
+                        >
+                          <Heart
+                            className={`w-4 h-4 ${
+                              isFavAyah ? 'fill-accent text-accent' : 'text-muted dark:text-muted-dark'
+                            }`}
+                          />
+                        </button>
+                      </div>
                     </div>
 
                     {settings.showArabic && (
                       <p
                         dir="rtl"
-                        onClick={() =>
-                          audioManager.playAyah(surah.number, ayah.numberInSurah, reciter.id)
-                        }
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedAyahNum(ayah.numberInSurah);
+                          setLastReadQuran(surah.number, ayah.numberInSurah);
+                          audioManager.playAyah(surah.number, ayah.numberInSurah, reciter.id);
+                        }}
                         className={`${fontClass} text-right leading-[2.1] text-ink dark:text-ink-dark cursor-pointer select-text`}
                         style={{fontSize: `${settings.arabicFontSize}px`}}
                       >
@@ -666,6 +872,65 @@ export const ReaderView: React.FC = () => {
                             {bnText}
                           </p>
                         ) : null}
+                      </div>
+                    )}
+
+                    {/* Saved Note Display or Inline Note Editor */}
+                    {(existingNote || isEditingNote) && (
+                      <div
+                        className="mt-3 pt-2.5 border-t border-brand-500/12 dark:border-white/12 space-y-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {isEditingNote ? (
+                          <>
+                            <textarea
+                              value={noteDraft}
+                              onChange={(e) => setNoteDraft(e.target.value)}
+                              rows={2}
+                              placeholder={pickLang(
+                                lang,
+                                'Write a personal reflection or note...',
+                                'اكتب ملاحظة أو تدبراً...',
+                                'ব্যক্তিগত নোট লিখুন...'
+                              )}
+                              className="w-full rounded-2xl glass p-3 text-xs sm:text-sm outline-none focus:ring-2 focus:ring-brand-500 dark:focus:ring-accent"
+                            />
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setEditingNoteKey(null)}
+                                className="px-3.5 min-h-[38px] rounded-xl glass text-xs font-semibold"
+                              >
+                                {t.library.cancel}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAyahNote(surah.number, ayah.numberInSurah, noteDraft);
+                                  setEditingNoteKey(null);
+                                  showToast(pickLang(lang, 'Note saved', 'تم حفظ الملاحظة', 'নোট সংরক্ষিত হয়েছে'));
+                                }}
+                                className="px-4 min-h-[38px] rounded-xl bg-brand-600 text-white dark:bg-accent dark:text-brand-950 text-xs font-semibold"
+                              >
+                                {pickLang(lang, 'Save Note', 'حفظ', 'সংরক্ষণ')}
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingNoteKey(ayahKey);
+                              setNoteDraft(existingNote);
+                            }}
+                            className="w-full text-start rounded-2xl glass px-3.5 py-2.5 text-xs text-ink/90 dark:text-ink-dark/90"
+                          >
+                            <span className="font-bold text-brand-700 dark:text-accent me-1.5">
+                              {pickLang(lang, 'Note:', 'ملاحظة:', 'নোট:')}
+                            </span>
+                            {existingNote}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -699,42 +964,61 @@ export const ReaderView: React.FC = () => {
         </div>
       </main>
 
-      {/* Bottom Compact Reader Glass Playback Bar */}
-      <div className="sticky bottom-0 z-20 glass-nav border-t px-4 py-2.5 pb-safe">
-        <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold text-ink dark:text-ink-dark truncate">
+      {/* Bottom Tilawat Glass Bar: Reciter switcher, Play Surah / Play from Ayah, Repeat/Range, Speed */}
+      <div className="sticky bottom-0 z-20 glass-nav border-t px-3 sm:px-4 py-2.5 pb-safe">
+        <div className="max-w-3xl mx-auto flex flex-wrap items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => setShowReciterPicker(true)}
+            className="min-w-0 flex-1 text-start min-h-[44px] flex flex-col justify-center rounded-2xl px-2 hover:bg-brand-500/8 dark:hover:bg-white/8"
+          >
+            <p className="text-xs font-semibold text-brand-700 dark:text-accent truncate">
               {lang === 'ar' ? reciter.nameAr : reciter.nameEn}
             </p>
-            <p className="text-[11px] text-muted dark:text-muted-dark truncate">
+            <p className="text-[11px] text-muted dark:text-muted-dark truncate tabular-nums">
               {playMode === 'ayah'
                 ? `${pickLang(lang, 'Ayah', 'آية', 'আয়াত')} ${currentAyahNumber} · ${ayahRepeatTarget}x`
-                : t.player.fullSurah}
+                : `${t.player.fullSurah} · ${playbackSpeed}x`}
             </p>
-          </div>
+          </button>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                const idx = SPEED_STEPS.indexOf(playbackSpeed);
+                audioManager.setSpeed(SPEED_STEPS[(idx + 1) % SPEED_STEPS.length]);
+              }}
+              aria-label={t.player.speed}
+              className="min-h-[44px] px-2.5 rounded-2xl glass text-xs font-bold tabular-nums"
+            >
+              {playbackSpeed}x
+            </button>
+
             <button
               type="button"
               onClick={() => setShowAyahControls((v) => !v)}
-              aria-label="Ayah Repeat"
-              className="min-h-[48px] px-3.5 rounded-2xl glass text-xs font-semibold flex items-center gap-1.5"
+              aria-label={t.player.ayahRepeat}
+              className="min-h-[44px] px-2.5 rounded-2xl glass text-xs font-semibold flex items-center gap-1"
             >
               <Sliders className="w-3.5 h-3.5" />
-              <span>{ayahRepeatTarget}x</span>
+              <span className="tabular-nums">{ayahRepeatTarget}x</span>
             </button>
 
             <button
               type="button"
               onClick={() => {
-                if (currentSurahNumber !== surah.number) {
-                  audioManager.playAyah(surah.number, 1, reciter.id);
+                const startAyah =
+                  currentSurahNumber === surah.number && playMode === 'ayah'
+                    ? currentAyahNumber
+                    : selectedAyahNum;
+                if (currentSurahNumber === surah.number && isPlaying && playMode === 'ayah') {
+                  audioManager.pause();
                 } else {
-                  audioManager.togglePlay();
+                  audioManager.playAyah(surah.number, startAyah, reciter.id);
                 }
               }}
-              aria-label={isCurrentSurahPlaying ? 'Pause' : 'Play'}
-              className="md-ripple min-h-[48px] px-5 rounded-2xl bg-brand-600 text-white dark:bg-accent dark:text-brand-950 text-xs font-semibold flex items-center gap-2 shadow-sm"
+              className="md-ripple min-h-[44px] px-4 rounded-2xl bg-brand-600 text-white dark:bg-accent dark:text-brand-950 text-xs font-semibold flex items-center gap-1.5 shadow-sm"
             >
               {isLoadingAudio && currentSurahNumber === surah.number ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -746,15 +1030,32 @@ export const ReaderView: React.FC = () => {
               <span>
                 {isCurrentSurahPlaying
                   ? pickLang(lang, 'Pause', 'إيقاف', 'বিরতি')
-                  : pickLang(lang, 'Listen', 'استماع', 'শুনুন')}
+                  : pickLang(lang, `Ayah ${selectedAyahNum}`, `آية ${selectedAyahNum}`, `আয়াত ${selectedAyahNum}`)}
               </span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Tafsir Glass Bottom Sheet */}
-      <TafsirSheet />
+      {/* Lazy Tafsir Glass Bottom Sheet */}
+      <Suspense fallback={null}>
+        <TafsirSheet />
+      </Suspense>
+
+      {/* Shared Searchable Reciter Picker */}
+      <ReciterPickerSheet
+        isOpen={showReciterPicker}
+        onClose={() => setShowReciterPicker(false)}
+        selectedReciterId={reciter.id}
+        onSelectReciter={(r) => {
+          if (playMode === 'ayah') {
+            audioManager.playAyah(surah.number, currentAyahNumber, r.id);
+          } else {
+            audioManager.playSurah(surah.number, r.id, 0);
+          }
+        }}
+      />
     </div>
   );
 };
+export default ReaderView;

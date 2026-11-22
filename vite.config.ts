@@ -103,6 +103,32 @@ export default defineConfig(() => {
         },
       }),
     ],
+    build: {
+      rolldownOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/')) {
+              return 'vendor-react';
+            }
+            if (id.includes('node_modules/lucide-react/')) {
+              return 'vendor-icons';
+            }
+            if (id.includes('node_modules/@capacitor') || id.includes('node_modules/@cap')) {
+              return 'vendor-capacitor';
+            }
+            if (id.includes('node_modules/adhan/')) {
+              return 'vendor-adhan';
+            }
+            if (id.includes('node_modules/dompurify/')) {
+              return 'vendor-dompurify';
+            }
+            if (id.includes('node_modules/zustand/')) {
+              return 'vendor-state';
+            }
+          },
+        },
+      },
+    },
     resolve: {
       alias: {
         '@': path.resolve(import.meta.dirname, '.'),

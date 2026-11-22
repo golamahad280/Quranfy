@@ -3,64 +3,48 @@ import {Capacitor} from '@capacitor/core';
 import {AppLanguage, HadithCollectionSlug} from '../types/quran';
 import {resolveHadithAudioUrl} from './hadithApi';
 
-export type HadithSpeakLanguage = 'ar' | 'en' | 'bn';
+export type HadithSpeakLanguage = 'en';
 
-const BCP47_MAP: Record<HadithSpeakLanguage, string[]> = {
-  ar: ['ar-SA', 'ar-EG', 'ar'],
-  en: ['en-US', 'en-GB', 'en'],
-  bn: ['bn-BD', 'bn-IN', 'bn'],
-};
+const EN_TAGS = ['en-US', 'en-GB', 'en'];
 
 class HadithTtsService {
   private activeToken = 0;
   private audioEl: HTMLAudioElement | null = null;
   private isPaused = false;
   private currentText = '';
-  private currentLang: HadithSpeakLanguage = 'en';
   private currentRate = 1;
   private onCompleteCb: (() => void) | null = null;
   private onErrorCb: ((msg: string, missingVoice: boolean) => void) | null = null;
 
-  async checkLanguageAvailability(lang: HadithSpeakLanguage): Promise<boolean> {
-    const tags = BCP47_MAP[lang];
+  async checkEnglishAvailability(): Promise<boolean> {
     if (Capacitor.isNativePlatform()) {
       try {
-        for (const tag of tags) {
+        for (const tag of EN_TAGS) {
           const res = await TextToSpeech.isLanguageSupported({lang: tag});
           if (res.supported) return true;
         }
         return false;
       } catch {
-        // Fallback optimistic true; speak() will surface real error if unsupported
         return true;
       }
     }
 
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       const voices = window.speechSynthesis.getVoices();
-      if (voices.length === 0) return true; // Voices may load lazily
-      const prefix = lang;
-      return voices.some((v) => v.lang.toLowerCase().startsWith(prefix));
+      if (voices.length === 0) return true;
+      return voices.some((v) => v.lang.toLowerCase().startsWith('en'));
     }
 
     return false;
   }
 
-  async openNativeTtsSettings(): Promise<void> {
-    if (!Capacitor.isNativePlatform()) return;
-    try {
-      await TextToSpeech.openInstall();
-    } catch {
-      // Ignore if unavailable
-    }
-  }
-
   async speak(params: {
     text: string;
-    lang: HadithSpeakLanguage;
+    lang: AppLanguage;
     rate: number;
     collectionSlug: HadithCollectionSlug;
     hadithNumber: number;
+    allowExperimentalDeviceTts: boolean;
     onComplete?: () => void;
     onError?: (msg: string, missingVoice: boolean) => void;
   }): Promise<void> {
@@ -69,22 +53,16 @@ class HadithTtsService {
     const token = ++this.activeToken;
     this.isPaused = false;
     this.currentText = params.text.trim();
-    this.currentLang = params.lang;
     this.currentRate = params.rate;
     this.onCompleteCb = params.onComplete || null;
     this.onErrorCb = params.onError || null;
 
-    if (!this.currentText) {
-      params.onError?.('No text available to read in this language.', false);
-      return;
-    }
-
-    // Check optional pluggable human-recited MP3 resolver first
+    // 1. Pluggable hook for future licensed human audio (works for any language once registered)
     try {
       const externalUrl = await resolveHadithAudioUrl(
         params.collectionSlug,
         params.hadithNumber,
-        params.lang as AppLanguage
+        params.lang
       );
       if (externalUrl && token === this.activeToken) {
         const audio = new Audio(externalUrl);
@@ -95,42 +73,52 @@ class HadithTtsService {
         };
         audio.onerror = () => {
           if (token === this.activeToken) {
-            this.onErrorCb?.('Failed to stream external hadith audio.', false);
+            this.onErrorCb?.('Failed to stream licensed hadith audio.', false);
           }
         };
         await audio.play();
         return;
       }
     } catch {
-      // Fall through to TTS
+      // No external audio URL available
     }
 
-    const available = await this.checkLanguageAvailability(params.lang);
-    if (!available) {
-      this.onErrorCb?.(
-        `No ${params.lang.toUpperCase()} TTS voice found on this device.`,
-        true
+    // 2. Device TTS is strictly English-only and gated behind the experimental Settings toggle
+    if (params.lang !== 'en') {
+      params.onError?.('Device voice is disabled for Arabic and Bangla.', false);
+      return;
+    }
+
+    if (!params.allowExperimentalDeviceTts) {
+      params.onError?.(
+        'Enable "Experimental: device voice for English hadith" in Settings to use device TTS.',
+        false
       );
       return;
     }
 
+    if (!this.currentText) {
+      params.onError?.('No English text available for this hadith.', false);
+      return;
+    }
+
+    const available = await this.checkEnglishAvailability();
+    if (!available) {
+      this.onErrorCb?.('No English TTS voice found on this device.', true);
+      return;
+    }
+
     if (Capacitor.isNativePlatform()) {
-      await this.speakNative(token, this.currentText, params.lang, params.rate);
+      await this.speakNativeEnglish(token, this.currentText, params.rate);
     } else {
-      this.speakWeb(token, this.currentText, params.lang, params.rate);
+      this.speakWebEnglish(token, this.currentText, params.rate);
     }
   }
 
-  private async speakNative(
-    token: number,
-    text: string,
-    lang: HadithSpeakLanguage,
-    rate: number
-  ): Promise<void> {
-    // Pick best supported BCP47 tag
-    let chosenTag = BCP47_MAP[lang][0];
+  private async speakNativeEnglish(token: number, text: string, rate: number): Promise<void> {
+    let chosenTag = EN_TAGS[0];
     try {
-      for (const candidate of BCP47_MAP[lang]) {
+      for (const candidate of EN_TAGS) {
         const res = await TextToSpeech.isLanguageSupported({lang: candidate});
         if (res.supported) {
           chosenTag = candidate;
@@ -141,7 +129,6 @@ class HadithTtsService {
       // keep default
     }
 
-    // Split long hadith into ~1500 char chunks cleanly at sentence boundaries for Android TTS stability
     const chunks = splitTextIntoChunks(text, 1500);
     try {
       for (const chunk of chunks) {
@@ -160,20 +147,12 @@ class HadithTtsService {
       }
     } catch {
       if (token === this.activeToken && !this.isPaused) {
-        this.onErrorCb?.(
-          `Unable to synthesize ${lang.toUpperCase()} voice on this device.`,
-          true
-        );
+        this.onErrorCb?.('Unable to synthesize English device voice.', true);
       }
     }
   }
 
-  private speakWeb(
-    token: number,
-    text: string,
-    lang: HadithSpeakLanguage,
-    rate: number
-  ): void {
+  private speakWebEnglish(token: number, text: string, rate: number): void {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
       this.onErrorCb?.('Text-to-speech is not supported in this browser.', true);
       return;
@@ -182,11 +161,11 @@ class HadithTtsService {
     const synth = window.speechSynthesis;
     const voices = synth.getVoices();
     const matchingVoice =
-      voices.find((v) => v.lang.toLowerCase() === BCP47_MAP[lang][0].toLowerCase()) ||
-      voices.find((v) => v.lang.toLowerCase().startsWith(lang));
+      voices.find((v) => v.lang.toLowerCase() === 'en-us') ||
+      voices.find((v) => v.lang.toLowerCase().startsWith('en'));
 
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = matchingVoice?.lang || BCP47_MAP[lang][0];
+    utterance.lang = matchingVoice?.lang || 'en-US';
     if (matchingVoice) utterance.voice = matchingVoice;
     utterance.rate = rate;
 
@@ -197,10 +176,7 @@ class HadithTtsService {
     };
     utterance.onerror = (ev) => {
       if (token === this.activeToken && ev.error !== 'interrupted' && ev.error !== 'canceled') {
-        this.onErrorCb?.(
-          `Speech synthesis failed for ${lang.toUpperCase()}.`,
-          true
-        );
+        this.onErrorCb?.('English device voice synthesis failed.', true);
       }
     };
 
@@ -234,13 +210,13 @@ class HadithTtsService {
     }
     if (Capacitor.isNativePlatform()) {
       const token = ++this.activeToken;
-      await this.speakNative(token, this.currentText, this.currentLang, this.currentRate);
+      await this.speakNativeEnglish(token, this.currentText, this.currentRate);
     } else if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       if (window.speechSynthesis.paused) {
         window.speechSynthesis.resume();
       } else {
         const token = ++this.activeToken;
-        this.speakWeb(token, this.currentText, this.currentLang, this.currentRate);
+        this.speakWebEnglish(token, this.currentText, this.currentRate);
       }
     }
   }

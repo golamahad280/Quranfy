@@ -10,7 +10,6 @@ import {
   Play,
   Repeat,
   Repeat1,
-  Search,
   Shuffle,
   SkipBack,
   SkipForward,
@@ -18,7 +17,7 @@ import {
   UserCheck,
   X,
 } from 'lucide-react';
-import React, {useMemo, useState} from 'react';
+import React, {useState} from 'react';
 import modeSleepImg from '../assets/images/mode_sleep.webp';
 import modeStudyImg from '../assets/images/mode_study.webp';
 import modeWorkImg from '../assets/images/mode_work.webp';
@@ -28,6 +27,7 @@ import {listAudioDownloads} from '../services/db';
 import {downloadSurahForOffline} from '../services/quranApi';
 import {getActiveAmbientSounds, SleepTimerType, useQuranStore} from '../store/useQuranStore';
 import {formatTime} from '../utils/formatters';
+import {ReciterPickerSheet} from './ReciterPickerSheet';
 
 const SPEED_OPTIONS = [0.75, 0.9, 1, 1.25, 1.5, 2];
 const SLEEP_OPTIONS: Array<{value: SleepTimerType; labelEn: string; labelAr: string}> = [
@@ -80,7 +80,6 @@ export const FullPlayerModal: React.FC = () => {
 
   const [showReciterPicker, setShowReciterPicker] = useState(false);
   const [showSleepPicker, setShowSleepPicker] = useState(false);
-  const [reciterQuery, setReciterQuery] = useState('');
 
   const t = TRANSLATIONS[lang];
   const surah = surahs.find((s) => s.number === currentSurahNumber) || surahs[0];
@@ -93,17 +92,6 @@ export const FullPlayerModal: React.FC = () => {
 
   const modeArtwork =
     focusMode === 'sleep' ? modeSleepImg : focusMode === 'work' ? modeWorkImg : modeStudyImg;
-
-  const filteredReciters = useMemo(() => {
-    const q = reciterQuery.trim().toLowerCase();
-    if (!q) return reciters;
-    return reciters.filter(
-      (r) =>
-        r.nameEn.toLowerCase().includes(q) ||
-        r.nameAr.includes(q) ||
-        r.styleEn.toLowerCase().includes(q)
-    );
-  }, [reciters, reciterQuery]);
 
   if (!isOpen) return null;
 
@@ -192,7 +180,7 @@ export const FullPlayerModal: React.FC = () => {
           type="button"
           onClick={() => {
             setOpen(false);
-            openReader(surah.number);
+            openReader(surah.number, playMode === 'ayah' ? currentAyahNumber : undefined);
           }}
           aria-label={t.player.readerView}
           className="min-h-[48px] min-w-[48px] flex items-center justify-center rounded-full hover:bg-brand-500/10 dark:hover:bg-white/10 text-brand-600 dark:text-accent"
@@ -354,7 +342,6 @@ export const FullPlayerModal: React.FC = () => {
 
         {/* Utility Row: Speed, Sleep Timer, Ambient, Offline Download */}
         <div className="mt-6 grid grid-cols-4 gap-2.5">
-          {/* Speed cycle button */}
           <button
             type="button"
             onClick={() => {
@@ -368,7 +355,6 @@ export const FullPlayerModal: React.FC = () => {
             <span className="text-[11px] text-muted dark:text-muted-dark">{t.player.speed}</span>
           </button>
 
-          {/* Sleep Timer */}
           <button
             type="button"
             onClick={() => setShowSleepPicker(true)}
@@ -390,7 +376,6 @@ export const FullPlayerModal: React.FC = () => {
             </span>
           </button>
 
-          {/* Ambient Mixer */}
           <button
             type="button"
             onClick={() => setAmbientSheetOpen(true)}
@@ -412,7 +397,6 @@ export const FullPlayerModal: React.FC = () => {
             </span>
           </button>
 
-          {/* Offline Download */}
           <button
             type="button"
             onClick={handleDownload}
@@ -484,75 +468,20 @@ export const FullPlayerModal: React.FC = () => {
         </div>
       )}
 
-      {/* Searchable Reciter Picker Sheet */}
-      {showReciterPicker && (
-        <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-brand-950/60 backdrop-blur-sm"
-          onClick={() => setShowReciterPicker(false)}
-        >
-          <div
-            className="w-full max-w-lg max-h-[82vh] flex flex-col rounded-t-3xl sm:rounded-3xl glass-strong p-5 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-base font-bold text-ink dark:text-ink-dark">
-                {t.player.switchReciter}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setShowReciterPicker(false)}
-                className="min-h-[48px] min-w-[48px] flex items-center justify-center rounded-full hover:bg-brand-500/10 dark:hover:bg-white/10"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="relative mb-3">
-              <Search className="w-4 h-4 absolute start-3.5 top-1/2 -translate-y-1/2 text-muted dark:text-muted-dark" />
-              <input
-                type="text"
-                value={reciterQuery}
-                onChange={(e) => setReciterQuery(e.target.value)}
-                placeholder={lang === 'ar' ? 'ابحث عن قارئ...' : 'Search reciters...'}
-                className="w-full min-h-[48px] rounded-2xl glass ps-10 pe-4 text-sm text-ink dark:text-ink-dark outline-none focus:ring-2 focus:ring-brand-500 dark:focus:ring-accent"
-              />
-            </div>
-            <div className="flex-1 overflow-y-auto space-y-2">
-              {filteredReciters.map((r) => {
-                const active = r.id === reciter.id;
-                return (
-                  <button
-                    key={r.id}
-                    type="button"
-                    onClick={() => {
-                      setShowReciterPicker(false);
-                      if (playMode === 'ayah') {
-                        audioManager.playAyah(surah.number, currentAyahNumber, r.id);
-                      } else {
-                        audioManager.playSurah(surah.number, r.id, 0);
-                      }
-                    }}
-                    className={`w-full text-start rounded-2xl p-3.5 min-h-[56px] flex items-center justify-between gap-3 transition-colors ${
-                      active
-                        ? 'bg-brand-600/15 dark:bg-accent/18 text-brand-700 dark:text-accent border border-brand-500/35 dark:border-accent/35'
-                        : 'glass hover:bg-brand-500/8 dark:hover:bg-white/10'
-                    }`}
-                  >
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold truncate">
-                        {lang === 'ar' ? r.nameAr : r.nameEn}
-                      </p>
-                      <p className="text-xs text-muted dark:text-muted-dark truncate">
-                        {lang === 'ar' ? r.nameEn : r.nameAr} · {lang === 'ar' ? r.styleAr : r.styleEn}
-                      </p>
-                    </div>
-                    {active && <Check className="w-5 h-5 shrink-0" />}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Shared Searchable Reciter Picker Sheet */}
+      <ReciterPickerSheet
+        isOpen={showReciterPicker}
+        onClose={() => setShowReciterPicker(false)}
+        selectedReciterId={reciter.id}
+        onSelectReciter={(r) => {
+          if (playMode === 'ayah') {
+            audioManager.playAyah(surah.number, currentAyahNumber, r.id);
+          } else {
+            audioManager.playSurah(surah.number, r.id, 0);
+          }
+        }}
+      />
     </div>
   );
 };
+export default FullPlayerModal;

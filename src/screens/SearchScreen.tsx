@@ -12,6 +12,7 @@ export const SearchScreen: React.FC = () => {
   const currentReciterId = useQuranStore((s) => s.currentReciterId);
   const settings = useQuranStore((s) => s.settings);
   const openReader = useQuranStore((s) => s.openReader);
+  const setSearchOpen = useQuranStore((s) => s.setSearchOpen);
   const setQueueAndPlay = useQuranStore((s) => s.setQueueAndPlay);
 
   const [query, setQuery] = useState('');
@@ -144,7 +145,10 @@ export const SearchScreen: React.FC = () => {
               >
                 <button
                   type="button"
-                  onClick={() => openReader(s.number)}
+                  onClick={() => {
+                    openReader(s.number);
+                    setSearchOpen(false);
+                  }}
                   className="flex-1 min-w-0 text-start flex items-center gap-3 min-h-[48px]"
                 >
                   <span className="w-10 h-10 rounded-2xl bg-brand-600/14 dark:bg-white/10 text-brand-700 dark:text-accent flex items-center justify-center text-xs font-bold tabular-nums shrink-0">
@@ -254,7 +258,10 @@ export const SearchScreen: React.FC = () => {
               >
                 <button
                   type="button"
-                  onClick={() => openReader(m.surahNumber)}
+                  onClick={() => {
+                    openReader(m.surahNumber, m.numberInSurah);
+                    setSearchOpen(false);
+                  }}
                   className="text-start flex-1 min-w-0"
                 >
                   <p className="text-xs font-semibold text-brand-700 dark:text-accent">
@@ -275,7 +282,10 @@ export const SearchScreen: React.FC = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => openReader(m.surahNumber)}
+                    onClick={() => {
+                      openReader(m.surahNumber, m.numberInSurah);
+                      setSearchOpen(false);
+                    }}
                     aria-label="Read in Surah"
                     className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-2xl hover:bg-brand-500/10 dark:hover:bg-white/10"
                   >

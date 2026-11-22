@@ -6,60 +6,59 @@ on:
 
 jobs:
   build-apk:
-    name: Build Quranfy Debug APK
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
-      - name: Set up Java 21
+      - name: Setup Java 21
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Set up Android SDK
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Cache Gradle packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+      - name: Install dependencies
+        run: npm install
 
-      - name: Install dependencies and build web bundle
-        run: |
-          npm ci || npm install
-          npm run build
+      - name: Build web bundle
+        run: npm run build
 
-      - name: Sync Capacitor Android project
+      - name: Ensure Android platform & sync Capacitor assets
         run: |
           if [ ! -d "android" ]; then
             npx cap add android
           fi
           npx cap sync android
 
-      - name: Build Debug APK
-        working-directory: android
+      - name: Configure local.properties for CI SDK
         run: |
-          chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          echo "sdk.dir=${ANDROID_HOME:-$ANDROID_SDK_ROOT}" > android/local.properties
 
-      - name: Prepare Quranfy APK output
+      - name: Verify sounds and fonts synced to Android assets
         run: |
-          mkdir -p release
+          test -d android/app/src/main/assets/public/sounds
+          ls -la android/app/src/main/assets/public/sounds
+          ls android/app/src/main/assets/public/assets/*.woff2 | head -n 10
+
+      - name: Build Debug APK
+        run: |
+          chmod +x android/gradlew
+          cd android && ./gradlew assembleDebug --no-daemon
+
+      - name: Prepare Quranfy.apk outputs
+        run: |
           cp android/app/build/outputs/apk/debug/app-debug.apk Quranfy.apk
+          mkdir -p release
           cp android/app/build/outputs/apk/debug/app-debug.apk release/Quranfy.apk
           ls -lh Quranfy.apk release/Quranfy.apk
 
