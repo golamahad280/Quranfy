@@ -2,8 +2,7 @@ name: Build Android APK
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
     paths-ignore:
       - 'apk/**'
       - 'android-keystore/**'
@@ -13,214 +12,120 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: build-android-apk
-  cancel-in-progress: false
-
 jobs:
   build-apk:
     runs-on: ubuntu-latest
-
+    timeout-minutes: 40
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
-      - name: Setup Java 21
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install dependencies
-        run: npm ci || npm install
-
-      - name: Build web bundle
-        run: npm run build
-
-      - name: Verify web dist/ and public/sounds/
+      - name: Install and build web app
         run: |
-          if [ ! -f "dist/index.html" ]; then
-            echo "Error: dist/index.html is missing after npm run build."
-            exit 1
-          fi
-          if [ ! -d "dist/sounds" ] || [ -z "$(ls -A dist/sounds)" ]; then
-            echo "Error: dist/sounds/ is missing or empty."
-            exit 1
-          fi
+          npm install
+          npm run build
 
-      - name: Ensure persistent Android signing keystore
+      - name: Add and sync Android platform
         run: |
-          if [ ! -f "android-keystore/quranfy.keystore" ]; then
-            echo "Generating persistent release keystore..."
-            mkdir -p android-keystore
-            keytool -genkeypair -v \
-              -keystore android-keystore/quranfy.keystore \
-              -alias quranfy \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -storepass quranfy123 \
-              -keypass quranfy123 \
-              -dname "CN=Quranfy, OU=Mobile, O=Quranfy, L=Makkah, S=Makkah, C=SA"
-
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add -f android-keystore/quranfy.keystore
-            if ! git diff --cached --quiet; then
-              git commit -m "chore: add keystore [skip ci]"
-              git pull --rebase --autostash origin main
-              git push origin HEAD:main
-            fi
-          else
-            echo "Reusing existing android-keystore/quranfy.keystore."
-          fi
-
-      - name: Generate Android project if missing
-        run: |
-          if [ ! -d "android" ]; then
-            npx cap add android
-          fi
+          [ -d android ] || npx cap add android
+          npx cap sync android
 
       - name: Patch Android project
-        run: node scripts/patch-android.mjs
-
-      - name: Sync Capacitor assets to Android
-        run: npx cap sync android
-
-      - name: Verify dist/ and sounds synced to Android assets
         run: |
-          ASSETS_DIR="android/app/src/main/assets/public"
-          if [ ! -f "$ASSETS_DIR/index.html" ]; then
-            echo "Error: $ASSETS_DIR/index.html is missing after cap sync android."
-            exit 1
-          fi
-          if [ ! -d "$ASSETS_DIR/sounds" ] || [ -z "$(ls -A "$ASSETS_DIR/sounds")" ]; then
-            echo "Error: public/sounds/ did not sync to $ASSETS_DIR/sounds."
-            exit 1
-          fi
-          ls -lh "$ASSETS_DIR/sounds"
-
-      - name: Build signed Release APK (with Debug fallback)
-        id: gradle_build
-        run: |
-          chmod +x android/gradlew
-          BUILD_TYPE="release"
-          if (cd android && ./gradlew assembleRelease --no-daemon) && [ -f "android/app/build/outputs/apk/release/app-release.apk" ]; then
-            APK_SRC="android/app/build/outputs/apk/release/app-release.apk"
-          else
-            echo "Release build/signing failed; falling back to assembleDebug..."
-            BUILD_TYPE="debug"
-            (cd android && ./gradlew assembleDebug --no-daemon)
-            APK_SRC="android/app/build/outputs/apk/debug/app-debug.apk"
-          fi
-
-          if [ ! -f "$APK_SRC" ]; then
-            echo "Error: APK not generated at $APK_SRC"
-            exit 1
-          fi
-
-          echo "apk_path=$APK_SRC" >> "$GITHUB_OUTPUT"
-          echo "build_type=$BUILD_TYPE" >> "$GITHUB_OUTPUT"
-
-      - name: Stage APK outputs in apk/ folder
-        id: stage_apk
-        run: |
-          VERSION_NAME="$(node -p "require('./package.json').version")"
-          RUN_NUM="${GITHUB_RUN_NUMBER:-1}"
-          APK_SRC="${{ steps.gradle_build.outputs.apk_path }}"
-          BUILD_DATE="$(date -u +'%Y-%m-%d %H:%M UTC')"
-
-          mkdir -p apk
-          cp "$APK_SRC" apk/Quranfy.apk
-          cp "$APK_SRC" "apk/Quranfy-v${VERSION_NAME}-build${RUN_NUM}.apk"
-
-          APK_SIZE="$(du -h apk/Quranfy.apk | cut -f1)"
-
-          cat > apk/README.md <<EOF
-          # Quranfy Android APK
-
-          Latest build: ${BUILD_DATE}
-          Version: v${VERSION_NAME} (build ${RUN_NUM}, ${{ steps.gradle_build.outputs.build_type }})
-          Size: ${APK_SIZE}
-
-          ## Files
-          - \`Quranfy.apk\` — Always points to the latest build
-          - \`Quranfy-v${VERSION_NAME}-build${RUN_NUM}.apk\` — Versioned build archive
-
-          ## Install Steps
-          1. Download \`Quranfy.apk\` on your Android phone (Android 7.0 / API 24+).
-          2. Allow **Install unknown apps** when prompted by your browser or file manager.
-          3. Tap \`Quranfy.apk\` to install or update cleanly in-place.
+          python3 - <<'PY'
+          p = 'android/app/src/main/AndroidManifest.xml'
+          s = open(p).read()
+          perms = ['INTERNET', 'WAKE_LOCK', 'POST_NOTIFICATIONS',
+                   'FOREGROUND_SERVICE', 'FOREGROUND_SERVICE_MEDIA_PLAYBACK']
+          add = ''.join(
+              '    <uses-permission android:name="android.permission.%s" />\n' % x
+              for x in perms if 'permission.%s"' % x not in s)
+          s = s.replace('</manifest>', add + '</manifest>')
+          if 'AndroidForegroundService' not in s:
+              svc = ('        <service android:name="io.capawesome.capacitorjs.plugins.foregroundservice.AndroidForegroundService"'
+                     ' android:foregroundServiceType="mediaPlayback" android:exported="false" />\n'
+                     '        <receiver android:name="io.capawesome.capacitorjs.plugins.foregroundservice.NotificationActionBroadcastReceiver"'
+                     ' android:exported="false" />\n')
+              s = s.replace('</application>', svc + '    </application>')
+          open(p, 'w').write(s)
+          PY
+          mkdir -p android/app/src/main/res/drawable
+          cat > android/app/src/main/res/drawable/ic_stat_quranfy.xml <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="24dp" android:height="24dp"
+              android:viewportWidth="24" android:viewportHeight="24">
+              <path android:fillColor="#FFFFFFFF"
+                  android:pathData="M13.3,3.5C11.1,3.9 9.4,5.7 9.4,8.0C9.4,10.5 11.4,12.5 13.9,12.5C15.0,12.5 16.0,12.1 16.8,11.4C16.1,13.1 14.5,14.2 12.6,14.2C9.9,14.2 7.8,12.1 7.8,9.4C7.8,6.5 10.2,3.8 13.3,3.5Z" />
+              <path android:fillColor="#FFFFFFFF"
+                  android:pathData="M4.5,15.3C4.5,14.5 5.1,13.9 5.9,13.9C8.2,13.9 10.4,14.6 12.0,15.8C13.6,14.6 15.8,13.9 18.1,13.9C18.9,13.9 19.5,14.5 19.5,15.3V20.0C19.5,20.7 19.0,21.2 18.3,21.2C16.0,21.2 13.9,21.8 12.0,22.8C10.1,21.8 8.0,21.2 5.7,21.2C5.0,21.2 4.5,20.7 4.5,20.0V15.3Z" />
+          </vector>
           EOF
+          sed -i "s/minSdkVersion = .*/minSdkVersion = 24/" android/variables.gradle
+          sed -i "s/versionCode [0-9]*/versionCode ${GITHUB_RUN_NUMBER}/" android/app/build.gradle
+          mkdir -p assets
+          cp public/pwa-512x512.png assets/icon-only.png
+          cp public/pwa-512x512.png assets/icon-foreground.png
+          npx @capacitor/assets generate --android --iconBackgroundColor '#0E0B1F' || echo "icon generation skipped"
 
-          echo "version_name=${VERSION_NAME}" >> "$GITHUB_OUTPUT"
-          echo "run_num=${RUN_NUM}" >> "$GITHUB_OUTPUT"
-          echo "apk_size=${APK_SIZE}" >> "$GITHUB_OUTPUT"
-          echo "build_date=${BUILD_DATE}" >> "$GITHUB_OUTPUT"
-
-      - name: Commit and push apk/ folder to main
+      - name: Prepare Android SDK (preinstalled)
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add apk/
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: update APK [skip ci]"
-            git pull --rebase --autostash origin main
-            git push origin HEAD:main
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+
+      - name: Keep one signing key so updates install over old versions
+        run: |
+          mkdir -p android-keystore ~/.android
+          if [ ! -f android-keystore/debug.keystore ]; then
+            keytool -genkeypair -v -keystore android-keystore/debug.keystore \
+              -storepass android -keypass android -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+            echo "NEW_KEY=1" >> $GITHUB_ENV
           fi
+          cp android-keystore/debug.keystore ~/.android/debug.keystore
 
-      - name: Recreate GitHub Release (latest tag)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build APK
         run: |
-          gh release delete latest --yes 2>/dev/null || true
-          git push origin :refs/tags/latest 2>/dev/null || true
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Publish GitHub Release with Quranfy.apk
+      - name: Put APK in apk/ folder
+        run: |
+          mkdir -p apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk apk/Quranfy.apk
+          cp apk/Quranfy.apk "apk/Quranfy-build${GITHUB_RUN_NUMBER}.apk"
+          ls -lh apk
+          echo "APK ready: apk/Quranfy.apk" >> $GITHUB_STEP_SUMMARY
+
+      - name: Commit apk folder
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add apk android-keystore
+          git commit -m "chore: update APK [skip ci]" || exit 0
+          git pull --rebase origin main || true
+          git push
+
+      - name: Publish release (permanent download link)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: "Quranfy v${{ steps.stage_apk.outputs.version_name }} (Build ${{ steps.stage_apk.outputs.run_num }})"
-          body: |
-            Latest automated Quranfy Android APK (${{ steps.stage_apk.outputs.build_type }}).
-            - **Version**: v${{ steps.stage_apk.outputs.version_name }} (build ${{ steps.stage_apk.outputs.run_num }})
-            - **Size**: ${{ steps.stage_apk.outputs.apk_size }}
-            - **Built**: ${{ steps.stage_apk.outputs.build_date }}
-            - **Install**: Allow unknown sources, open `Quranfy.apk`.
+          name: Quranfy latest APK
           files: apk/Quranfy.apk
-          prerelease: false
-          draft: false
+          make_latest: true
 
-      - name: Upload Quranfy-APK workflow artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: Quranfy-APK
           path: apk/Quranfy.apk
-          retention-days: 30
-          if-no-files-found: error
-
-      - name: Write job summary
-        run: |
-          DIRECT_URL="https://github.com/${{ github.repository }}/releases/latest/download/Quranfy.apk"
-          REPO_APK_URL="https://github.com/${{ github.repository }}/blob/main/apk/Quranfy.apk"
-          {
-            echo "## Quranfy APK Published"
-            echo ""
-            echo "- **Version**: \`v${{ steps.stage_apk.outputs.version_name }}\` (build \`${{ steps.stage_apk.outputs.run_num }}\`, \`${{ steps.gradle_build.outputs.build_type }}\`)"
-            echo "- **Size**: \`${{ steps.stage_apk.outputs.apk_size }}\`"
-            echo "- **Built**: ${{ steps.stage_apk.outputs.build_date }}"
-            echo ""
-            echo "### Download Locations"
-            echo "1. **Direct Permanent Release Download**: ${DIRECT_URL}"
-            echo "2. **Repository \`apk/\` Folder**: ${REPO_APK_URL}"
-            echo "3. **Workflow Artifact**: \`Quranfy-APK\` (retained for 30 days)"
-          } >> "$GITHUB_STEP_SUMMARY"
