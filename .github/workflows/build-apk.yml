@@ -75,6 +75,7 @@ jobs:
           cp public/pwa-512x512.png assets/icon-only.png
           cp public/pwa-512x512.png assets/icon-foreground.png
           npx @capacitor/assets generate --android --iconBackgroundColor '#0E0B1F' || echo "icon generation skipped"
+          rm -rf android/app/src/main/res/mipmap-anydpi-v26
 
       - name: Prepare Android SDK (preinstalled)
         run: |
