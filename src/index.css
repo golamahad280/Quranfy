@@ -1,0 +1,128 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --font-display: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    --font-sans: 'DM Sans', system-ui, -apple-system, sans-serif;
+    --font-quran-amiri: 'Amiri Quran', 'Scheherazade New', serif;
+    --font-quran-scheherazade: 'Scheherazade New', 'Amiri Quran', serif;
+  }
+
+  html {
+    font-family: var(--font-sans);
+    -webkit-tap-highlight-color: transparent;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: #f6f8f7;
+    color: #13201c;
+    overscroll-behavior-y: contain;
+  }
+
+  html.dark body {
+    background-color: #0b1210;
+    color: #ecf2ef;
+  }
+
+  html.sleep-dimmed.dark body {
+    background-color: #060a09;
+    color: #dde5e1;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: var(--font-display);
+  }
+}
+
+.font-quran-amiri {
+  font-family: var(--font-quran-amiri);
+  font-feature-settings: "liga" 1, "calt" 1, "kern" 1;
+}
+
+.font-quran-scheherazade {
+  font-family: var(--font-quran-scheherazade);
+  font-feature-settings: "liga" 1, "calt" 1, "kern" 1;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Safe area helpers for mobile notch / Android gesture bar */
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Material You tactile surface press & ripple feel */
+.md-ripple {
+  position: relative;
+  overflow: hidden;
+  transition: transform 140ms cubic-bezier(0.16, 1, 0.3, 1), background-color 160ms ease, opacity 160ms ease;
+}
+
+.md-ripple:active {
+  transform: scale(0.985);
+}
+
+.md-ripple::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, currentColor 0%, transparent 72%);
+  opacity: 0;
+  transform: scale(0.4);
+  transition: transform 280ms cubic-bezier(0.16, 1, 0.3, 1), opacity 280ms ease;
+  pointer-events: none;
+}
+
+.md-ripple:active::after {
+  opacity: 0.1;
+  transform: scale(1.6);
+  transition: transform 0ms, opacity 0ms;
+}
+
+/* Range input styling (Material You slider) */
+input[type="range"].md-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 9999px;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type="range"].md-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: #0F5C4D;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  transition: transform 120ms ease;
+}
+
+html.dark input[type="range"].md-slider::-webkit-slider-thumb {
+  background: #4ECBA9;
+  border-color: #0B1210;
+}
+
+input[type="range"].md-slider::-webkit-slider-thumb:active {
+  transform: scale(1.2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .md-ripple,
+  .md-ripple::after {
+    transition: none;
+  }
+}
