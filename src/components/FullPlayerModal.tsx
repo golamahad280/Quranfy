@@ -19,14 +19,14 @@ import {
   X,
 } from 'lucide-react';
 import React, {useMemo, useState} from 'react';
-import modeSleepImg from '../assets/images/mode_sleep_1795329629389.jpg';
-import modeStudyImg from '../assets/images/mode_study_1795329629451.jpg';
-import modeWorkImg from '../assets/images/mode_work_1795329629446.jpg';
+import modeSleepImg from '../assets/images/mode_sleep.webp';
+import modeStudyImg from '../assets/images/mode_study.webp';
+import modeWorkImg from '../assets/images/mode_work.webp';
 import {TRANSLATIONS} from '../data/i18n';
 import {audioManager} from '../services/audioManager';
 import {listAudioDownloads} from '../services/db';
 import {downloadSurahForOffline} from '../services/quranApi';
-import {SleepTimerType, useQuranStore} from '../store/useQuranStore';
+import {getActiveAmbientSounds, SleepTimerType, useQuranStore} from '../store/useQuranStore';
 import {formatTime} from '../utils/formatters';
 
 const SPEED_OPTIONS = [0.75, 0.9, 1, 1.25, 1.5, 2];
@@ -62,7 +62,7 @@ export const FullPlayerModal: React.FC = () => {
   const sleepTimerSetting = useQuranStore((s) => s.sleepTimerSetting);
   const sleepTimerEndsAt = useQuranStore((s) => s.sleepTimerEndsAt);
   const isFadingOut = useQuranStore((s) => s.isFadingOut);
-  const ambientSound = useQuranStore((s) => s.ambientSound);
+  const ambientMix = useQuranStore((s) => s.ambientMix);
   const favoriteSurahNumbers = useQuranStore((s) => s.favoriteSurahNumbers);
   const downloadedKeys = useQuranStore((s) => s.downloadedKeys);
   const downloadProgress = useQuranStore((s) => s.downloadProgress);
@@ -89,6 +89,7 @@ export const FullPlayerModal: React.FC = () => {
   const dlKey = `${reciter.id}_${surah.number}`;
   const isDownloaded = downloadedKeys.includes(dlKey);
   const dlPct = downloadProgress[dlKey];
+  const activeAmbient = getActiveAmbientSounds(ambientMix);
 
   const modeArtwork =
     focusMode === 'sleep' ? modeSleepImg : focusMode === 'work' ? modeWorkImg : modeStudyImg;
@@ -122,9 +123,15 @@ export const FullPlayerModal: React.FC = () => {
       setDownloadedKeys(list.map((d) => d.key));
       setDownloadProgress(dlKey, null);
       showToast(lang === 'ar' ? 'تم تحميل السورة للاستماع دون إنترنت' : 'Saved for offline listening');
-    } catch {
+    } catch (err) {
       setDownloadProgress(dlKey, null);
-      showToast(lang === 'ar' ? 'فشل التحميل. تحقق من الاتصال.' : 'Download failed. Check connection.');
+      const msg =
+        err instanceof Error && err.message
+          ? err.message
+          : lang === 'ar'
+          ? 'فشل التحميل. تحقق من الاتصال.'
+          : 'Download failed. Check connection.';
+      showToast(msg);
     }
   };
 
@@ -139,7 +146,7 @@ export const FullPlayerModal: React.FC = () => {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col bg-[#F6F8F7] dark:bg-[#0B1210] overflow-y-auto pt-safe pb-safe"
+      className="fixed inset-0 z-50 flex flex-col bg-surface-light/95 dark:bg-surface-dark/95 backdrop-blur-2xl overflow-y-auto pt-safe pb-safe"
       role="dialog"
       aria-modal="true"
       aria-label="Full Player"
@@ -150,20 +157,20 @@ export const FullPlayerModal: React.FC = () => {
           type="button"
           onClick={() => setOpen(false)}
           aria-label="Collapse player"
-          className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10"
+          className="min-h-[48px] min-w-[48px] flex items-center justify-center rounded-full hover:bg-brand-500/10 dark:hover:bg-white/10"
         >
           <ChevronDown className="w-6 h-6" />
         </button>
 
         {/* Segmented Play Mode Control */}
-        <div className="flex items-center p-1 rounded-2xl bg-[#E5ECE8] dark:bg-[#172420]">
+        <div className="flex items-center p-1 rounded-2xl glass">
           <button
             type="button"
             onClick={() => handleModeSwitch('surah')}
-            className={`px-3.5 min-h-[36px] rounded-xl text-xs font-medium whitespace-nowrap transition-colors ${
+            className={`px-3.5 min-h-[40px] rounded-xl text-xs font-semibold whitespace-nowrap transition-colors ${
               playMode === 'surah'
-                ? 'bg-white dark:bg-[#233730] text-[#13201C] dark:text-[#ECF2EF] shadow-sm'
-                : 'text-[#546660] dark:text-[#96ABA3]'
+                ? 'bg-brand-600 text-white dark:bg-accent dark:text-brand-950 shadow-sm'
+                : 'text-muted dark:text-muted-dark'
             }`}
           >
             {t.player.fullSurah}
@@ -171,10 +178,10 @@ export const FullPlayerModal: React.FC = () => {
           <button
             type="button"
             onClick={() => handleModeSwitch('ayah')}
-            className={`px-3.5 min-h-[36px] rounded-xl text-xs font-medium whitespace-nowrap transition-colors ${
+            className={`px-3.5 min-h-[40px] rounded-xl text-xs font-semibold whitespace-nowrap transition-colors ${
               playMode === 'ayah'
-                ? 'bg-white dark:bg-[#233730] text-[#13201C] dark:text-[#ECF2EF] shadow-sm'
-                : 'text-[#546660] dark:text-[#96ABA3]'
+                ? 'bg-brand-600 text-white dark:bg-accent dark:text-brand-950 shadow-sm'
+                : 'text-muted dark:text-muted-dark'
             }`}
           >
             {t.player.ayahByAyah}
@@ -188,7 +195,7 @@ export const FullPlayerModal: React.FC = () => {
             openReader(surah.number);
           }}
           aria-label={t.player.readerView}
-          className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-[#0F5C4D] dark:text-[#4ECBA9]"
+          className="min-h-[48px] min-w-[48px] flex items-center justify-center rounded-full hover:bg-brand-500/10 dark:hover:bg-white/10 text-brand-600 dark:text-accent"
         >
           <BookOpen className="w-5 h-5" />
         </button>
@@ -197,32 +204,29 @@ export const FullPlayerModal: React.FC = () => {
       {/* Main Content */}
       <div className="flex-1 flex flex-col justify-between max-w-lg w-full mx-auto px-5 pb-8 pt-2">
         {/* Artwork Card */}
-        <div className="relative rounded-3xl overflow-hidden aspect-[16/10] bg-[#132922] shadow-xl">
+        <div className="relative rounded-3xl overflow-hidden aspect-[16/10] bg-brand-950 shadow-xl border border-white/15">
           <img
             src={modeArtwork}
             alt={`${focusMode} atmosphere`}
             referrerPolicy="no-referrer"
             className="w-full h-full object-cover opacity-80"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#081512]/90 via-[#081512]/40 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-brand-950/92 via-brand-950/45 to-brand-900/20" />
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6">
-            <p
-              className="font-quran-amiri text-3xl sm:text-4xl text-[#F4E6C3] drop-shadow"
-              dir="rtl"
-            >
+            <p className="font-quran-amiri text-3xl sm:text-4xl text-accent-200 drop-shadow" dir="rtl">
               {surah.name}
             </p>
-            <p className="mt-2 text-xs text-white/80 tracking-wide">
+            <p className="mt-2 text-xs text-white/85 tracking-wide font-medium">
               {surah.number} · {surah.englishNameTranslation} · {surah.numberOfAyahs} {t.home.ayahs}
             </p>
           </div>
           {playingOffline && (
-            <div className="absolute bottom-3 left-4 text-[11px] font-medium text-[#4ECBA9]">
+            <div className="absolute bottom-3 left-4 text-[11px] font-semibold text-accent-200">
               {t.player.offlineReady}
             </div>
           )}
           {isFadingOut && (
-            <div className="absolute bottom-3 right-4 text-[11px] font-medium text-[#E2B76B]">
+            <div className="absolute bottom-3 right-4 text-[11px] font-semibold text-accent">
               {t.player.fadingOut}
             </div>
           )}
@@ -231,10 +235,10 @@ export const FullPlayerModal: React.FC = () => {
         {/* Title & Reciter & Favorite */}
         <div className="mt-6 flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <h1 className="text-2xl font-bold text-[#13201C] dark:text-[#ECF2EF] truncate">
+            <h1 className="text-2xl font-bold text-ink dark:text-ink-dark truncate">
               {surah.englishName}
               {playMode === 'ayah' && (
-                <span className="text-base font-medium text-[#0F5C4D] dark:text-[#4ECBA9] ms-2">
+                <span className="text-base font-semibold text-brand-600 dark:text-accent ms-2">
                   · {lang === 'ar' ? 'آية' : 'Ayah'} {currentAyahNumber}
                 </span>
               )}
@@ -242,12 +246,10 @@ export const FullPlayerModal: React.FC = () => {
             <button
               type="button"
               onClick={() => setShowReciterPicker(true)}
-              className="mt-1 inline-flex items-center gap-1.5 text-sm text-[#0F5C4D] dark:text-[#4ECBA9] font-medium hover:underline min-h-[36px]"
+              className="mt-1 inline-flex items-center gap-1.5 text-sm text-brand-600 dark:text-accent font-semibold hover:underline min-h-[40px]"
             >
               <UserCheck className="w-4 h-4 shrink-0" />
-              <span className="truncate">
-                {lang === 'ar' ? reciter.nameAr : reciter.nameEn}
-              </span>
+              <span className="truncate">{lang === 'ar' ? reciter.nameAr : reciter.nameEn}</span>
             </button>
           </div>
 
@@ -255,18 +257,18 @@ export const FullPlayerModal: React.FC = () => {
             type="button"
             onClick={() => toggleFavoriteSurah(surah.number)}
             aria-label="Favorite Surah"
-            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10"
+            className="min-h-[48px] min-w-[48px] flex items-center justify-center rounded-full hover:bg-brand-500/10 dark:hover:bg-white/10"
           >
             <Heart
               className={`w-6 h-6 transition-colors ${
-                isFav ? 'fill-[#C69749] text-[#C69749]' : 'text-[#546660] dark:text-[#96ABA3]'
+                isFav ? 'fill-accent text-accent' : 'text-muted dark:text-muted-dark'
               }`}
             />
           </button>
         </div>
 
         {audioError && (
-          <div className="mt-3 rounded-2xl bg-amber-500/15 px-3.5 py-2.5 text-xs text-amber-800 dark:text-amber-300">
+          <div className="mt-3 rounded-2xl glass px-4 py-3 text-xs font-medium text-accent-600 dark:text-accent-200">
             {audioError}
           </div>
         )}
@@ -280,9 +282,9 @@ export const FullPlayerModal: React.FC = () => {
             value={Math.min(currentTimeSec, durationSec || 100)}
             onChange={(e) => audioManager.seekTo(Number(e.target.value))}
             aria-label="Seek position"
-            className="w-full md-slider bg-black/15 dark:bg-white/15"
+            className="w-full md-slider bg-brand-900/15 dark:bg-white/20"
           />
-          <div className="mt-1.5 flex items-center justify-between text-xs text-[#546660] dark:text-[#96ABA3] tabular-nums">
+          <div className="mt-1.5 flex items-center justify-between text-xs text-muted dark:text-muted-dark tabular-nums">
             <span>{formatTime(currentTimeSec)}</span>
             <span>{durationSec > 0 ? formatTime(durationSec) : '--:--'}</span>
           </div>
@@ -296,8 +298,8 @@ export const FullPlayerModal: React.FC = () => {
             aria-label={t.player.shuffle}
             className={`min-h-[48px] min-w-[48px] flex items-center justify-center rounded-full transition-colors ${
               shuffle
-                ? 'text-[#0F5C4D] dark:text-[#4ECBA9] bg-[#0F5C4D]/10 dark:bg-[#4ECBA9]/15'
-                : 'text-[#546660] dark:text-[#96ABA3] hover:bg-black/5 dark:hover:bg-white/10'
+                ? 'text-brand-700 dark:text-accent bg-brand-600/14 dark:bg-accent/18'
+                : 'text-muted dark:text-muted-dark hover:bg-brand-500/10 dark:hover:bg-white/10'
             }`}
           >
             <Shuffle className="w-5 h-5" />
@@ -307,7 +309,7 @@ export const FullPlayerModal: React.FC = () => {
             type="button"
             onClick={() => audioManager.playPrevious()}
             aria-label="Previous"
-            className="md-ripple min-h-[52px] min-w-[52px] flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-[#13201C] dark:text-[#ECF2EF]"
+            className="md-ripple min-h-[52px] min-w-[52px] flex items-center justify-center rounded-full hover:bg-brand-500/10 dark:hover:bg-white/10 text-ink dark:text-ink-dark"
           >
             <SkipBack className="w-6 h-6" />
           </button>
@@ -316,7 +318,7 @@ export const FullPlayerModal: React.FC = () => {
             type="button"
             onClick={() => audioManager.togglePlay()}
             aria-label={isPlaying ? 'Pause' : 'Play'}
-            className="md-ripple w-16 h-16 rounded-3xl bg-[#0F5C4D] text-white dark:bg-[#4ECBA9] dark:text-[#081A15] flex items-center justify-center shadow-lg"
+            className="md-ripple w-16 h-16 rounded-3xl bg-brand-600 text-white dark:bg-accent dark:text-brand-950 flex items-center justify-center shadow-lg"
           >
             {isLoadingAudio ? (
               <Loader2 className="w-7 h-7 animate-spin" />
@@ -331,7 +333,7 @@ export const FullPlayerModal: React.FC = () => {
             type="button"
             onClick={() => audioManager.playNext()}
             aria-label="Next"
-            className="md-ripple min-h-[52px] min-w-[52px] flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-[#13201C] dark:text-[#ECF2EF]"
+            className="md-ripple min-h-[52px] min-w-[52px] flex items-center justify-center rounded-full hover:bg-brand-500/10 dark:hover:bg-white/10 text-ink dark:text-ink-dark"
           >
             <SkipForward className="w-6 h-6" />
           </button>
@@ -342,20 +344,16 @@ export const FullPlayerModal: React.FC = () => {
             aria-label="Repeat mode"
             className={`min-h-[48px] min-w-[48px] flex items-center justify-center rounded-full transition-colors ${
               repeatMode !== 'off'
-                ? 'text-[#0F5C4D] dark:text-[#4ECBA9] bg-[#0F5C4D]/10 dark:bg-[#4ECBA9]/15'
-                : 'text-[#546660] dark:text-[#96ABA3] hover:bg-black/5 dark:hover:bg-white/10'
+                ? 'text-brand-700 dark:text-accent bg-brand-600/14 dark:bg-accent/18'
+                : 'text-muted dark:text-muted-dark hover:bg-brand-500/10 dark:hover:bg-white/10'
             }`}
           >
-            {repeatMode === 'surah' ? (
-              <Repeat1 className="w-5 h-5" />
-            ) : (
-              <Repeat className="w-5 h-5" />
-            )}
+            {repeatMode === 'surah' ? <Repeat1 className="w-5 h-5" /> : <Repeat className="w-5 h-5" />}
           </button>
         </div>
 
         {/* Utility Row: Speed, Sleep Timer, Ambient, Offline Download */}
-        <div className="mt-6 grid grid-cols-4 gap-2">
+        <div className="mt-6 grid grid-cols-4 gap-2.5">
           {/* Speed cycle button */}
           <button
             type="button"
@@ -364,20 +362,20 @@ export const FullPlayerModal: React.FC = () => {
               const next = SPEED_OPTIONS[(idx + 1) % SPEED_OPTIONS.length];
               audioManager.setSpeed(next);
             }}
-            className="md-ripple flex flex-col items-center justify-center gap-1 rounded-2xl bg-[#EDF3F0] dark:bg-[#16241F] py-2.5 min-h-[54px] text-xs font-medium text-[#13201C] dark:text-[#DCE6E2]"
+            className="md-ripple glass flex flex-col items-center justify-center gap-1 rounded-2xl py-2.5 min-h-[58px] text-xs font-semibold text-ink dark:text-ink-dark"
           >
             <span className="text-sm font-bold tabular-nums">{playbackSpeed}x</span>
-            <span className="text-[11px] text-[#546660] dark:text-[#96ABA3]">{t.player.speed}</span>
+            <span className="text-[11px] text-muted dark:text-muted-dark">{t.player.speed}</span>
           </button>
 
           {/* Sleep Timer */}
           <button
             type="button"
             onClick={() => setShowSleepPicker(true)}
-            className={`md-ripple flex flex-col items-center justify-center gap-1 rounded-2xl py-2.5 min-h-[54px] text-xs font-medium ${
+            className={`md-ripple flex flex-col items-center justify-center gap-1 rounded-2xl py-2.5 min-h-[58px] text-xs font-semibold ${
               sleepTimerSetting
-                ? 'bg-[#0F5C4D] text-white dark:bg-[#4ECBA9] dark:text-[#081A15]'
-                : 'bg-[#EDF3F0] dark:bg-[#16241F] text-[#13201C] dark:text-[#DCE6E2]'
+                ? 'bg-brand-600 text-white dark:bg-accent dark:text-brand-950 shadow-sm'
+                : 'glass text-ink dark:text-ink-dark'
             }`}
           >
             <Moon className="w-4 h-4" />
@@ -396,15 +394,21 @@ export const FullPlayerModal: React.FC = () => {
           <button
             type="button"
             onClick={() => setAmbientSheetOpen(true)}
-            className={`md-ripple flex flex-col items-center justify-center gap-1 rounded-2xl py-2.5 min-h-[54px] text-xs font-medium ${
-              ambientSound
-                ? 'bg-[#0F5C4D] text-white dark:bg-[#4ECBA9] dark:text-[#081A15]'
-                : 'bg-[#EDF3F0] dark:bg-[#16241F] text-[#13201C] dark:text-[#DCE6E2]'
+            className={`md-ripple flex flex-col items-center justify-center gap-1 rounded-2xl py-2.5 min-h-[58px] text-xs font-semibold ${
+              activeAmbient.length > 0
+                ? 'bg-brand-600 text-white dark:bg-accent dark:text-brand-950 shadow-sm'
+                : 'glass text-ink dark:text-ink-dark'
             }`}
           >
             <SlidersHorizontal className="w-4 h-4" />
             <span className="text-[11px] truncate max-w-full px-1">
-              {ambientSound ? t.modes[ambientSound] : lang === 'ar' ? 'الأصوات' : 'Ambient'}
+              {activeAmbient.length === 1
+                ? t.modes[activeAmbient[0]]
+                : activeAmbient.length > 1
+                ? `${activeAmbient.length} ${lang === 'ar' ? 'أصوات' : 'Mix'}`
+                : lang === 'ar'
+                ? 'الأصوات'
+                : 'Ambient'}
             </span>
           </button>
 
@@ -412,10 +416,10 @@ export const FullPlayerModal: React.FC = () => {
           <button
             type="button"
             onClick={handleDownload}
-            className={`md-ripple flex flex-col items-center justify-center gap-1 rounded-2xl py-2.5 min-h-[54px] text-xs font-medium ${
+            className={`md-ripple flex flex-col items-center justify-center gap-1 rounded-2xl py-2.5 min-h-[58px] text-xs font-semibold ${
               isDownloaded
-                ? 'bg-[#0F5C4D]/15 text-[#0F5C4D] dark:bg-[#4ECBA9]/20 dark:text-[#4ECBA9]'
-                : 'bg-[#EDF3F0] dark:bg-[#16241F] text-[#13201C] dark:text-[#DCE6E2]'
+                ? 'bg-brand-600/15 text-brand-700 dark:bg-accent/20 dark:text-accent border border-brand-500/30 dark:border-accent/35'
+                : 'glass text-ink dark:text-ink-dark'
             }`}
           >
             {dlPct !== undefined ? (
@@ -435,19 +439,21 @@ export const FullPlayerModal: React.FC = () => {
       {/* Sleep Timer Picker Sheet */}
       {showSleepPicker && (
         <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-brand-950/60 backdrop-blur-sm"
           onClick={() => setShowSleepPicker(false)}
         >
           <div
-            className="w-full max-w-md rounded-t-3xl sm:rounded-3xl bg-white dark:bg-[#131F1C] p-6 shadow-2xl"
+            className="w-full max-w-md rounded-t-3xl sm:rounded-3xl glass-strong p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-semibold">{t.player.sleepTimer}</h3>
+              <h3 className="text-base font-bold text-ink dark:text-ink-dark">
+                {t.player.sleepTimer}
+              </h3>
               <button
                 type="button"
                 onClick={() => setShowSleepPicker(false)}
-                className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full"
+                className="min-h-[48px] min-w-[48px] flex items-center justify-center rounded-full hover:bg-brand-500/10 dark:hover:bg-white/10"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -463,10 +469,10 @@ export const FullPlayerModal: React.FC = () => {
                       setSleepTimer(opt.value);
                       setShowSleepPicker(false);
                     }}
-                    className={`min-h-[46px] rounded-2xl px-4 text-sm font-medium transition-colors ${
+                    className={`md-ripple min-h-[48px] rounded-2xl px-4 text-sm font-semibold transition-colors ${
                       active
-                        ? 'bg-[#0F5C4D] text-white dark:bg-[#4ECBA9] dark:text-[#081A15]'
-                        : 'bg-[#F3F6F4] dark:bg-[#192823] text-[#13201C] dark:text-[#ECF2EF]'
+                        ? 'bg-brand-600 text-white dark:bg-accent dark:text-brand-950'
+                        : 'glass text-ink dark:text-ink-dark'
                     }`}
                   >
                     {lang === 'ar' ? opt.labelAr : opt.labelEn}
@@ -481,34 +487,36 @@ export const FullPlayerModal: React.FC = () => {
       {/* Searchable Reciter Picker Sheet */}
       {showReciterPicker && (
         <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-brand-950/60 backdrop-blur-sm"
           onClick={() => setShowReciterPicker(false)}
         >
           <div
-            className="w-full max-w-lg max-h-[82vh] flex flex-col rounded-t-3xl sm:rounded-3xl bg-white dark:bg-[#131F1C] p-5 shadow-2xl"
+            className="w-full max-w-lg max-h-[82vh] flex flex-col rounded-t-3xl sm:rounded-3xl glass-strong p-5 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-base font-semibold">{t.player.switchReciter}</h3>
+              <h3 className="text-base font-bold text-ink dark:text-ink-dark">
+                {t.player.switchReciter}
+              </h3>
               <button
                 type="button"
                 onClick={() => setShowReciterPicker(false)}
-                className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full"
+                className="min-h-[48px] min-w-[48px] flex items-center justify-center rounded-full hover:bg-brand-500/10 dark:hover:bg-white/10"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
             <div className="relative mb-3">
-              <Search className="w-4 h-4 absolute start-3.5 top-1/2 -translate-y-1/2 text-[#546660]" />
+              <Search className="w-4 h-4 absolute start-3.5 top-1/2 -translate-y-1/2 text-muted dark:text-muted-dark" />
               <input
                 type="text"
                 value={reciterQuery}
                 onChange={(e) => setReciterQuery(e.target.value)}
                 placeholder={lang === 'ar' ? 'ابحث عن قارئ...' : 'Search reciters...'}
-                className="w-full min-h-[44px] rounded-2xl bg-[#F3F6F4] dark:bg-[#192823] ps-10 pe-4 text-sm outline-none focus:ring-2 focus:ring-[#0F5C4D] dark:focus:ring-[#4ECBA9]"
+                className="w-full min-h-[48px] rounded-2xl glass ps-10 pe-4 text-sm text-ink dark:text-ink-dark outline-none focus:ring-2 focus:ring-brand-500 dark:focus:ring-accent"
               />
             </div>
-            <div className="flex-1 overflow-y-auto space-y-1.5">
+            <div className="flex-1 overflow-y-auto space-y-2">
               {filteredReciters.map((r) => {
                 const active = r.id === reciter.id;
                 return (
@@ -525,15 +533,15 @@ export const FullPlayerModal: React.FC = () => {
                     }}
                     className={`w-full text-start rounded-2xl p-3.5 min-h-[56px] flex items-center justify-between gap-3 transition-colors ${
                       active
-                        ? 'bg-[#0F5C4D]/12 dark:bg-[#4ECBA9]/15 text-[#0F5C4D] dark:text-[#4ECBA9]'
-                        : 'hover:bg-black/4 dark:hover:bg-white/5'
+                        ? 'bg-brand-600/15 dark:bg-accent/18 text-brand-700 dark:text-accent border border-brand-500/35 dark:border-accent/35'
+                        : 'glass hover:bg-brand-500/8 dark:hover:bg-white/10'
                     }`}
                   >
                     <div className="min-w-0">
                       <p className="text-sm font-semibold truncate">
                         {lang === 'ar' ? r.nameAr : r.nameEn}
                       </p>
-                      <p className="text-xs text-[#546660] dark:text-[#96ABA3] truncate">
+                      <p className="text-xs text-muted dark:text-muted-dark truncate">
                         {lang === 'ar' ? r.nameEn : r.nameAr} · {lang === 'ar' ? r.styleAr : r.styleEn}
                       </p>
                     </div>

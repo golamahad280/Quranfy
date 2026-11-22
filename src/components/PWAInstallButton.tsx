@@ -19,12 +19,18 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({compact = fal
       <button
         type="button"
         onClick={install}
-        className={`md-ripple inline-flex items-center justify-center gap-2 rounded-2xl bg-[#0F5C4D] text-white dark:bg-[#4ECBA9] dark:text-[#081A15] font-medium whitespace-nowrap shrink-0 transition-colors hover:bg-[#0C4C3F] dark:hover:bg-[#65D8B9] ${
-          compact ? 'px-3 min-h-[44px] text-xs' : 'w-full px-4 min-h-[48px] text-sm'
+        className={`md-ripple inline-flex items-center justify-center gap-2 rounded-2xl bg-brand-600 text-white dark:bg-accent dark:text-brand-950 font-semibold whitespace-nowrap shrink-0 transition-colors hover:bg-brand-700 dark:hover:bg-accent-300 ${
+          compact ? 'px-3.5 min-h-[42px] text-xs' : 'w-full px-4 min-h-[48px] text-sm'
         }`}
       >
         <Download className="w-4 h-4 shrink-0" />
-        <span>{lang === 'ar' ? 'تثبيت التطبيق' : 'Install App'}</span>
+        <span>
+          {lang === 'ar'
+            ? 'تثبيت التطبيق'
+            : lang === 'bn'
+            ? 'অ্যাপ ইনস্টল'
+            : 'Install App'}
+        </span>
       </button>
     );
   }
@@ -35,31 +41,37 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({compact = fal
         <button
           type="button"
           onClick={() => setShowIOSGuide(true)}
-          className={`md-ripple inline-flex items-center justify-center gap-2 rounded-2xl border border-[#0F5C4D]/25 text-[#0F5C4D] dark:border-[#4ECBA9]/30 dark:text-[#4ECBA9] font-medium whitespace-nowrap shrink-0 ${
-            compact ? 'px-3 min-h-[44px] text-xs' : 'w-full px-4 min-h-[48px] text-sm'
+          className={`md-ripple inline-flex items-center justify-center gap-2 rounded-2xl glass text-brand-700 dark:text-accent font-semibold whitespace-nowrap shrink-0 ${
+            compact ? 'px-3.5 min-h-[42px] text-xs' : 'w-full px-4 min-h-[48px] text-sm'
           }`}
         >
           <Smartphone className="w-4 h-4 shrink-0" />
-          <span>{lang === 'ar' ? 'إضافة للشاشة الرئيسية' : 'Add to Home Screen'}</span>
+          <span>
+            {lang === 'ar'
+              ? 'إضافة للشاشة الرئيسية'
+              : lang === 'bn'
+              ? 'হোম স্ক্রিনে যোগ'
+              : 'Add to Home Screen'}
+          </span>
         </button>
 
         {showIOSGuide && (
-          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="w-full max-w-sm rounded-3xl bg-white dark:bg-[#131F1C] p-6 shadow-2xl border border-black/5 dark:border-white/10">
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-brand-950/60 backdrop-blur-sm p-4">
+            <div className="w-full max-w-sm rounded-3xl glass-strong p-6 shadow-2xl">
               <div className="flex items-center justify-between">
-                <h3 className="text-base font-semibold text-[#13201C] dark:text-[#ECF2EF]">
+                <h3 className="text-base font-bold text-ink dark:text-ink-dark">
                   {lang === 'ar' ? 'تثبيت قرآنفاي على iPhone' : 'Install Quranfy on iPhone / iPad'}
                 </h3>
                 <button
                   type="button"
                   onClick={() => setShowIOSGuide(false)}
                   aria-label="Close"
-                  className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10"
+                  className="min-h-[48px] min-w-[48px] flex items-center justify-center rounded-full hover:bg-brand-500/10 dark:hover:bg-white/10"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
-              <ol className="mt-4 space-y-2 text-sm text-[#43544E] dark:text-[#A4B7B0] leading-relaxed">
+              <ol className="mt-4 space-y-2 text-sm text-muted dark:text-muted-dark leading-relaxed">
                 <li>
                   {lang === 'ar'
                     ? '١. اضغط على زر المشاركة (Share) في شريط سفاري.'
@@ -74,7 +86,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({compact = fal
               <button
                 type="button"
                 onClick={() => setShowIOSGuide(false)}
-                className="mt-5 w-full min-h-[44px] rounded-2xl bg-[#0F5C4D] text-white dark:bg-[#4ECBA9] dark:text-[#081A15] text-sm font-medium"
+                className="md-ripple mt-5 w-full min-h-[48px] rounded-2xl bg-brand-600 text-white dark:bg-accent dark:text-brand-950 text-sm font-semibold"
               >
                 {lang === 'ar' ? 'حسناً' : 'Done'}
               </button>

@@ -4,10 +4,20 @@ import {APP_VERSION} from '../data/i18n';
 import {CURATED_PLAYLISTS, FEATURED_RECITERS, MODE_CONFIG} from '../data/recitersAndPlaylists';
 import {SURAHS} from '../data/surahs';
 import {
+  AMBIENT_PRESETS,
+  AMBIENT_SOUNDS,
+  DEFAULT_CHANNEL_VOLUMES,
+} from '../services/ambientAudio';
+import {
+  AmbientChannelState,
+  AmbientMixState,
+  AmbientPresetId,
   AmbientSoundType,
   AppSettings,
   FavoriteAyah,
+  FavoriteHadith,
   FocusMode,
+  HadithBookmark,
   Playlist,
   PlaylistItem,
   PlayMode,
@@ -25,10 +35,26 @@ export interface QueueTrack {
   reciterId: string;
 }
 
+export function createInitialAmbientMix(): AmbientMixState {
+  const channels = {} as Record<AmbientSoundType, AmbientChannelState>;
+  for (const id of AMBIENT_SOUNDS) {
+    channels[id] = {enabled: false, volume: DEFAULT_CHANNEL_VOLUMES[id]};
+  }
+  return {
+    masterVolume: 0.65,
+    channels,
+  };
+}
+
+export function getActiveAmbientSounds(mix: AmbientMixState): AmbientSoundType[] {
+  return AMBIENT_SOUNDS.filter((id) => mix.channels[id]?.enabled);
+}
+
 interface QuranState {
   // Navigation & UI
   activeTab: TabId;
-  readerSurahNumber: number | null; // When non-null, Read & Listen screen is open
+  readerSurahNumber: number | null;
+  tafsirTarget: {surahNumber: number; ayahNumber: number; arabicText: string} | null;
   isFullPlayerOpen: boolean;
   isAmbientSheetOpen: boolean;
   hasCompletedOnboarding: boolean;
@@ -40,10 +66,9 @@ interface QuranState {
   reciters: Reciter[];
   customPlaylists: Playlist[];
 
-  // Focus Mode & Ambient Mixer
+  // Focus Mode & Multi-Track Ambient Mixer
   focusMode: FocusMode;
-  ambientSound: AmbientSoundType | null;
-  ambientVolume: number;
+  ambientMix: AmbientMixState;
 
   // Playback State
   currentSurahNumber: number;
@@ -92,6 +117,13 @@ interface QuranState {
   downloadProgress: Record<string, number>;
   downloadedKeys: string[];
 
+  // Hadith persistence
+  favoriteHadiths: FavoriteHadith[];
+  hadithBookmark: HadithBookmark | null;
+  hadithFontSize: number;
+  hadithTtsSpeed: number;
+  hadithAutoNext: boolean;
+
   // Settings
   settings: AppSettings;
 
@@ -99,6 +131,8 @@ interface QuranState {
   setActiveTab: (tab: TabId) => void;
   openReader: (surahNumber: number) => void;
   closeReader: () => void;
+  openTafsirSheet: (surahNumber: number, ayahNumber: number, arabicText: string) => void;
+  closeTafsirSheet: () => void;
   setFullPlayerOpen: (open: boolean) => void;
   setAmbientSheetOpen: (open: boolean) => void;
   completeOnboarding: () => void;
@@ -109,12 +143,38 @@ interface QuranState {
   setSurahs: (surahs: SurahMeta[]) => void;
   setReciters: (reciters: Reciter[]) => void;
   setFocusMode: (mode: FocusMode) => void;
-  setAmbientSound: (sound: AmbientSoundType | null) => void;
-  setAmbientVolume: (vol: number) => void;
 
-  setPlaybackTrack: (surahNumber: number, reciterId?: string, playMode?: PlayMode, ayahNumber?: number) => void;
+  // Ambient Mixer actions
+  toggleAmbientChannel: (sound: AmbientSoundType) => AmbientMixState;
+  setAmbientChannelVolume: (sound: AmbientSoundType, volume: number) => AmbientMixState;
+  setAmbientMasterVolume: (volume: number) => AmbientMixState;
+  applyAmbientPreset: (presetId: AmbientPresetId) => AmbientMixState;
+  clearAmbientMix: () => AmbientMixState;
+
+  setPlaybackTrack: (
+    surahNumber: number,
+    reciterId?: string,
+    playMode?: PlayMode,
+    ayahNumber?: number
+  ) => void;
   setQueueAndPlay: (tracks: QueueTrack[], startIndex?: number) => void;
-  setPlaybackRuntime: (patch: Partial<Pick<QuranState, 'isPlaying' | 'isLoadingAudio' | 'playingOffline' | 'audioError' | 'currentTimeSec' | 'durationSec' | 'isFadingOut' | 'currentAyahNumber' | 'ayahRepeatCurrent' | 'queueIndex'>>) => void;
+  setPlaybackRuntime: (
+    patch: Partial<
+      Pick<
+        QuranState,
+        | 'isPlaying'
+        | 'isLoadingAudio'
+        | 'playingOffline'
+        | 'audioError'
+        | 'currentTimeSec'
+        | 'durationSec'
+        | 'isFadingOut'
+        | 'currentAyahNumber'
+        | 'ayahRepeatCurrent'
+        | 'queueIndex'
+      >
+    >
+  ) => void;
   setPlayMode: (mode: PlayMode) => void;
   setPlaybackSpeed: (speed: number) => void;
   cycleRepeatMode: () => void;
@@ -149,6 +209,13 @@ interface QuranState {
   setDownloadProgress: (key: string, pct: number | null) => void;
   setDownloadedKeys: (keys: string[]) => void;
 
+  // Hadith actions
+  toggleFavoriteHadith: (item: FavoriteHadith) => void;
+  setHadithBookmark: (bookmark: HadithBookmark | null) => void;
+  setHadithFontSize: (size: number) => void;
+  setHadithTtsSpeed: (speed: number) => void;
+  setHadithAutoNext: (autoNext: boolean) => void;
+
   // Settings
   updateSettings: (patch: Partial<AppSettings>) => void;
 }
@@ -165,7 +232,6 @@ export function calculateStreakDays(logs: Record<string, number>): number {
   const today = new Date();
   let streak = 0;
 
-  // Check if today has >= 60s; if not, check starting from yesterday
   const formatDate = (date: Date) => {
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -196,6 +262,7 @@ export const useQuranStore = create<QuranState>()(
     (set, get) => ({
       activeTab: 'home',
       readerSurahNumber: null,
+      tafsirTarget: null,
       isFullPlayerOpen: false,
       isAmbientSheetOpen: false,
       hasCompletedOnboarding: false,
@@ -207,8 +274,7 @@ export const useQuranStore = create<QuranState>()(
       customPlaylists: [],
 
       focusMode: 'study',
-      ambientSound: null,
-      ambientVolume: 0.32,
+      ambientMix: createInitialAmbientMix(),
 
       currentSurahNumber: 1,
       currentReciterId: 'mishary-alafasy',
@@ -252,20 +318,32 @@ export const useQuranStore = create<QuranState>()(
       downloadProgress: {},
       downloadedKeys: [],
 
+      favoriteHadiths: [],
+      hadithBookmark: null,
+      hadithFontSize: 24,
+      hadithTtsSpeed: 1,
+      hadithAutoNext: false,
+
       settings: {
         theme: 'auto',
         language: 'en',
         arabicFont: 'amiri',
         arabicFontSize: 30,
+        showArabic: true,
         showTranslation: true,
+        showBanglaTranslation: false,
         translationEdition: 'en.sahih',
+        selectedTafsirId: null,
         audioQuality: 'high',
         defaultReciterId: 'mishary-alafasy',
       },
 
       setActiveTab: (activeTab) => set({activeTab}),
       openReader: (surahNumber) => set({readerSurahNumber: surahNumber}),
-      closeReader: () => set({readerSurahNumber: null}),
+      closeReader: () => set({readerSurahNumber: null, tafsirTarget: null}),
+      openTafsirSheet: (surahNumber, ayahNumber, arabicText) =>
+        set({tafsirTarget: {surahNumber, ayahNumber, arabicText}}),
+      closeTafsirSheet: () => set({tafsirTarget: null}),
       setFullPlayerOpen: (isFullPlayerOpen) => set({isFullPlayerOpen}),
       setAmbientSheetOpen: (isAmbientSheetOpen) => set({isAmbientSheetOpen}),
       completeOnboarding: () =>
@@ -296,8 +374,95 @@ export const useQuranStore = create<QuranState>()(
         });
       },
 
-      setAmbientSound: (ambientSound) => set({ambientSound}),
-      setAmbientVolume: (ambientVolume) => set({ambientVolume}),
+      toggleAmbientChannel: (sound) => {
+        const prev = get().ambientMix;
+        const currentChannel = prev.channels[sound] || {
+          enabled: false,
+          volume: DEFAULT_CHANNEL_VOLUMES[sound],
+        };
+        const nextMix: AmbientMixState = {
+          ...prev,
+          channels: {
+            ...prev.channels,
+            [sound]: {
+              ...currentChannel,
+              enabled: !currentChannel.enabled,
+            },
+          },
+        };
+        set({ambientMix: nextMix});
+        return nextMix;
+      },
+
+      setAmbientChannelVolume: (sound, volume) => {
+        const prev = get().ambientMix;
+        const currentChannel = prev.channels[sound] || {
+          enabled: true,
+          volume: DEFAULT_CHANNEL_VOLUMES[sound],
+        };
+        const nextMix: AmbientMixState = {
+          ...prev,
+          channels: {
+            ...prev.channels,
+            [sound]: {
+              ...currentChannel,
+              volume,
+            },
+          },
+        };
+        set({ambientMix: nextMix});
+        return nextMix;
+      },
+
+      setAmbientMasterVolume: (masterVolume) => {
+        const prev = get().ambientMix;
+        const nextMix: AmbientMixState = {
+          ...prev,
+          masterVolume,
+        };
+        set({ambientMix: nextMix});
+        return nextMix;
+      },
+
+      applyAmbientPreset: (presetId) => {
+        const prev = get().ambientMix;
+        const nextChannels = {...prev.channels};
+        for (const id of AMBIENT_SOUNDS) {
+          nextChannels[id] = {
+            enabled: false,
+            volume: nextChannels[id]?.volume ?? DEFAULT_CHANNEL_VOLUMES[id],
+          };
+        }
+        for (const entry of AMBIENT_PRESETS[presetId]) {
+          nextChannels[entry.id] = {
+            enabled: true,
+            volume: entry.volume,
+          };
+        }
+        const nextMix: AmbientMixState = {
+          ...prev,
+          channels: nextChannels,
+        };
+        set({ambientMix: nextMix});
+        return nextMix;
+      },
+
+      clearAmbientMix: () => {
+        const prev = get().ambientMix;
+        const nextChannels = {...prev.channels};
+        for (const id of AMBIENT_SOUNDS) {
+          nextChannels[id] = {
+            enabled: false,
+            volume: nextChannels[id]?.volume ?? DEFAULT_CHANNEL_VOLUMES[id],
+          };
+        }
+        const nextMix: AmbientMixState = {
+          ...prev,
+          channels: nextChannels,
+        };
+        set({ambientMix: nextMix});
+        return nextMix;
+      },
 
       setPlaybackTrack: (surahNumber, reciterId, playMode, ayahNumber) => {
         const state = get();
@@ -422,7 +587,10 @@ export const useQuranStore = create<QuranState>()(
             (r) => !(r.surahNumber === surahNumber && r.reciterId === reciterId)
           );
           return {
-            recentlyPlayed: [{surahNumber, reciterId, playedAt: Date.now()}, ...filtered].slice(0, 12),
+            recentlyPlayed: [{surahNumber, reciterId, playedAt: Date.now()}, ...filtered].slice(
+              0,
+              12
+            ),
           };
         }),
 
@@ -500,9 +668,7 @@ export const useQuranStore = create<QuranState>()(
             p.id === playlistId
               ? {
                   ...p,
-                  items: p.items.map((it) =>
-                    it.id === itemId ? {...it, reciterId} : it
-                  ),
+                  items: p.items.map((it) => (it.id === itemId ? {...it, reciterId} : it)),
                 }
               : p
           ),
@@ -541,6 +707,20 @@ export const useQuranStore = create<QuranState>()(
 
       setDownloadedKeys: (downloadedKeys) => set({downloadedKeys}),
 
+      toggleFavoriteHadith: (item) =>
+        set((s) => {
+          const exists = s.favoriteHadiths.some((h) => h.id === item.id);
+          return {
+            favoriteHadiths: exists
+              ? s.favoriteHadiths.filter((h) => h.id !== item.id)
+              : [item, ...s.favoriteHadiths],
+          };
+        }),
+      setHadithBookmark: (hadithBookmark) => set({hadithBookmark}),
+      setHadithFontSize: (hadithFontSize) => set({hadithFontSize}),
+      setHadithTtsSpeed: (hadithTtsSpeed) => set({hadithTtsSpeed}),
+      setHadithAutoNext: (hadithAutoNext) => set({hadithAutoNext}),
+
       updateSettings: (patch) =>
         set((s) => ({
           settings: {...s.settings, ...patch},
@@ -548,13 +728,36 @@ export const useQuranStore = create<QuranState>()(
     }),
     {
       name: 'quranfy-store-v1',
+      merge: (persisted, current) => {
+        const p = (persisted || {}) as Partial<QuranState>;
+        const baseMix = createInitialAmbientMix();
+        const mergedChannels = {...baseMix.channels};
+        if (p.ambientMix?.channels) {
+          for (const id of AMBIENT_SOUNDS) {
+            if (p.ambientMix.channels[id]) {
+              mergedChannels[id] = p.ambientMix.channels[id];
+            }
+          }
+        }
+        return {
+          ...current,
+          ...p,
+          settings: {
+            ...current.settings,
+            ...(p.settings || {}),
+          },
+          ambientMix: {
+            masterVolume: p.ambientMix?.masterVolume ?? baseMix.masterVolume,
+            channels: mergedChannels,
+          },
+        };
+      },
       partialize: (state) => ({
         hasCompletedOnboarding: state.hasCompletedOnboarding,
         lastSeenVersion: state.lastSeenVersion,
         customPlaylists: state.customPlaylists,
         focusMode: state.focusMode,
-        ambientSound: state.ambientSound,
-        ambientVolume: state.ambientVolume,
+        ambientMix: state.ambientMix,
         currentSurahNumber: state.currentSurahNumber,
         currentReciterId: state.currentReciterId,
         playMode: state.playMode,
@@ -566,6 +769,11 @@ export const useQuranStore = create<QuranState>()(
         favoriteSurahNumbers: state.favoriteSurahNumbers,
         favoriteReciterIds: state.favoriteReciterIds,
         favoriteAyahs: state.favoriteAyahs,
+        favoriteHadiths: state.favoriteHadiths,
+        hadithBookmark: state.hadithBookmark,
+        hadithFontSize: state.hadithFontSize,
+        hadithTtsSpeed: state.hadithTtsSpeed,
+        hadithAutoNext: state.hadithAutoNext,
         recentlyPlayed: state.recentlyPlayed,
         dailyGoalMinutes: state.dailyGoalMinutes,
         listeningSecondsByDate: state.listeningSecondsByDate,

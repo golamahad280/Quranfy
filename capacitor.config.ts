@@ -14,8 +14,13 @@ const config: CapacitorConfig = {
   },
   plugins: {
     LocalNotifications: {
-      smallIcon: 'ic_stat_icon_config_sample',
-      iconColor: '#0F5C4D',
+      smallIcon: 'ic_stat_quranfy',
+      iconColor: '#4F46C8',
+    },
+    StatusBar: {
+      overlaysWebView: false,
+      style: 'DARK',
+      backgroundColor: '#0E0B1F',
     },
   },
 };

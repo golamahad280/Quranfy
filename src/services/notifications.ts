@@ -1,22 +1,31 @@
 import {Capacitor} from '@capacitor/core';
 import {LocalNotifications} from '@capacitor/local-notifications';
+import {pickLang} from '../data/i18n';
+import {AppLanguage} from '../types/quran';
 
 const REMINDER_NOTIFICATION_ID = 11401;
 
 export async function scheduleDailyReminder(
   enabled: boolean,
   timeHHMM: string,
-  language: 'en' | 'ar'
+  language: AppLanguage
 ): Promise<{ok: boolean; message: string}> {
   const [hourStr, minStr] = timeHHMM.split(':');
   const hour = Math.min(23, Math.max(0, Number(hourStr) || 20));
   const minute = Math.min(59, Math.max(0, Number(minStr) || 0));
 
-  const title = language === 'ar' ? 'وقت القرآن اليومي' : 'Daily Quran Time';
-  const body =
-    language === 'ar'
-      ? 'خصّص دقائق هادئة للاستماع إلى القرآن وتدبره.'
-      : 'Take a few calm minutes to listen and reflect on the Quran.';
+  const title = pickLang(
+    language,
+    'Daily Quran Time',
+    'وقت القرآن اليومي',
+    'দৈনিক কুরআনের সময়'
+  );
+  const body = pickLang(
+    language,
+    'Take a few calm minutes to listen and reflect on the Quran.',
+    'خصّص دقائق هادئة للاستماع إلى القرآن وتدبره.',
+    'কুরআন তিলাওয়াত শুনতে ও অনুধাবন করতে কিছু শান্ত সময় দিন।'
+  );
 
   if (Capacitor.isNativePlatform()) {
     try {
@@ -24,10 +33,12 @@ export async function scheduleDailyReminder(
       if (perm.display !== 'granted') {
         return {
           ok: false,
-          message:
-            language === 'ar'
-              ? 'يرجى السماح بالإشعارات من إعدادات الجهاز.'
-              : 'Notification permission was denied.',
+          message: pickLang(
+            language,
+            'Notification permission was denied.',
+            'يرجى السماح بالإشعارات من إعدادات الجهاز.',
+            'নোটিফিকেশনের অনুমতি দেওয়া হয়নি।'
+          ),
         };
       }
 
@@ -52,20 +63,28 @@ export async function scheduleDailyReminder(
       return {
         ok: true,
         message: enabled
-          ? language === 'ar'
-            ? 'تم جدولة التذكير اليومي.'
-            : `Daily reminder set for ${timeHHMM}.`
-          : language === 'ar'
-          ? 'تم إيقاف التذكير اليومي.'
-          : 'Daily reminder turned off.',
+          ? pickLang(
+              language,
+              `Daily reminder set for ${timeHHMM}.`,
+              'تم جدولة التذكير اليومي.',
+              `দৈনিক রিমাইন্ডার ${timeHHMM}-এ সেট করা হয়েছে।`
+            )
+          : pickLang(
+              language,
+              'Daily reminder turned off.',
+              'تم إيقاف التذكير اليومي.',
+              'দৈনিক রিমাইন্ডার বন্ধ করা হয়েছে।'
+            ),
       };
     } catch {
       return {
         ok: false,
-        message:
-          language === 'ar'
-            ? 'تعذر جدولة الإشعار على هذا الجهاز.'
-            : 'Could not schedule native notification.',
+        message: pickLang(
+          language,
+          'Could not schedule native notification.',
+          'تعذر جدولة الإشعار على هذا الجهاز.',
+          'এই ডিভাইসে নোটিফিকেশন নির্ধারণ করা যায়নি।'
+        ),
       };
     }
   }
@@ -74,10 +93,12 @@ export async function scheduleDailyReminder(
   if (!('Notification' in window)) {
     return {
       ok: true,
-      message:
-        language === 'ar'
-          ? 'تم حفظ تفضيل التذكير محلياً (إشعارات النظام متاحة في تطبيق Android).'
-          : 'Reminder preference saved locally (native schedule activates in Android APK).',
+      message: pickLang(
+        language,
+        'Reminder preference saved locally (native schedule activates in Android APK).',
+        'تم حفظ تفضيل التذكير محلياً (إشعارات النظام متاحة في تطبيق Android).',
+        'রিমাইন্ডার স্থানীয়ভাবে সংরক্ষিত হয়েছে (Android অ্যাপে নির্ধারিত সময় কাজ করবে)।'
+      ),
     };
   }
 
@@ -86,10 +107,12 @@ export async function scheduleDailyReminder(
     if (result !== 'granted') {
       return {
         ok: false,
-        message:
-          language === 'ar'
-            ? 'يرجى السماح بإشعارات المتصفح.'
-            : 'Browser notification permission was not granted.',
+        message: pickLang(
+          language,
+          'Browser notification permission was not granted.',
+          'يرجى السماح بإشعارات المتصفح.',
+          'ব্রাউজার নোটিফিকেশনের অনুমতি দেওয়া হয়নি।'
+        ),
       };
     }
   }
@@ -97,21 +120,29 @@ export async function scheduleDailyReminder(
   return {
     ok: true,
     message: enabled
-      ? language === 'ar'
-        ? `تم حفظ التذكير للساعة ${timeHHMM}.`
-        : `Daily reminder saved for ${timeHHMM}.`
-      : language === 'ar'
-      ? 'تم إيقاف التذكير.'
-      : 'Daily reminder turned off.',
+      ? pickLang(
+          language,
+          `Daily reminder saved for ${timeHHMM}.`,
+          `تم حفظ التذكير للساعة ${timeHHMM}.`,
+          `দৈনিক রিমাইন্ডার ${timeHHMM}-এ সংরক্ষিত হয়েছে।`
+        )
+      : pickLang(
+          language,
+          'Daily reminder turned off.',
+          'تم إيقاف التذكير.',
+          'দৈনিক রিমাইন্ডার বন্ধ করা হয়েছে।'
+        ),
   };
 }
 
-export async function sendTestNotification(language: 'en' | 'ar'): Promise<boolean> {
-  const title = language === 'ar' ? 'تذكير قرآنفاي' : 'Quranfy Reminder';
-  const body =
-    language === 'ar'
-      ? 'تذكير لطيف لوردك اليومي من القرآن الكريم.'
-      : 'A gentle reminder for your daily Quran listening goal.';
+export async function sendTestNotification(language: AppLanguage): Promise<boolean> {
+  const title = pickLang(language, 'Quranfy Reminder', 'تذكير قرآنفاي', 'কুরআনফাই রিমাইন্ডার');
+  const body = pickLang(
+    language,
+    'A gentle reminder for your daily Quran listening goal.',
+    'تذكير لطيف لوردك اليومي من القرآن الكريم.',
+    'আপনার দৈনিক কুরআন শোনার লক্ষ্যের একটি কোমল স্মরণ।'
+  );
 
   if (Capacitor.isNativePlatform()) {
     try {

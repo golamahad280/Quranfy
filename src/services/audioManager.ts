@@ -1,7 +1,14 @@
+import {Capacitor} from '@capacitor/core';
+import {Directory, Filesystem} from '@capacitor/filesystem';
+import {ForegroundService, Importance} from '@capawesome-team/capacitor-android-foreground-service';
+import {MediaSession} from '@capgo/capacitor-media-session';
 import {useQuranStore} from '../store/useQuranStore';
 import {ambientEngine} from './ambientAudio';
 import {getAudioDownload} from './db';
 import {getAyahAudioUrl, getSurahAudioUrl} from './quranApi';
+
+const PLAYBACK_CHANNEL_ID = 'quranfy_playback';
+const PLAYBACK_NOTIFICATION_ID = 11400;
 
 class SharedAudioManager {
   private audio: HTMLAudioElement;
@@ -10,6 +17,10 @@ class SharedAudioManager {
   private fadeTimer: number | null = null;
   private initialized = false;
   private lastLoadedSignature = '';
+  private lastResumeSavedAt = 0;
+  private lastPositionSyncAt = 0;
+  private foregroundChannelCreated = false;
+  private foregroundRunning = false;
 
   constructor() {
     this.audio = new Audio();
@@ -27,7 +38,7 @@ class SharedAudioManager {
         isLoadingAudio: false,
       });
       this.audio.playbackRate = store.playbackSpeed;
-      this.updateMediaSession();
+      void this.updateMediaSession();
     });
 
     this.audio.addEventListener('canplay', () => {
@@ -41,33 +52,44 @@ class SharedAudioManager {
     this.audio.addEventListener('playing', () => {
       const store = useQuranStore.getState();
       store.setPlaybackRuntime({isPlaying: true, isLoadingAudio: false, audioError: null});
-      this.updateMediaSession();
+      ambientEngine.setRecitationActive(true);
+      void this.updateMediaSession();
+      void this.syncForegroundService(true);
     });
 
     this.audio.addEventListener('pause', () => {
       const store = useQuranStore.getState();
       store.setPlaybackRuntime({isPlaying: false});
+      ambientEngine.setRecitationActive(false);
+      this.lastResumeSavedAt = Date.now();
       store.setResumePositionSec(this.audio.currentTime || 0);
-      this.updateMediaSession();
+      void this.updateMediaSession();
+      void this.syncForegroundService(false);
     });
 
     this.audio.addEventListener('timeupdate', () => {
       const store = useQuranStore.getState();
       const ct = this.audio.currentTime || 0;
       store.setPlaybackRuntime({currentTimeSec: ct});
-      if (Math.floor(ct) % 5 === 0) {
+
+      const now = Date.now();
+      if (now - this.lastResumeSavedAt >= 5000) {
+        this.lastResumeSavedAt = now;
         store.setResumePositionSec(ct);
       }
-      this.checkSleepTimerTick();
+
+      if (now - this.lastPositionSyncAt >= 5000) {
+        this.lastPositionSyncAt = now;
+        void this.syncPositionState();
+      }
     });
 
     this.audio.addEventListener('ended', () => {
-      this.handleTrackEnded();
+      void this.handleTrackEnded();
     });
 
     this.audio.addEventListener('error', () => {
       const store = useQuranStore.getState();
-      // Attempt fallback server if available
       const reciter = store.reciters.find((r) => r.id === store.currentReciterId);
       if (
         store.playMode === 'surah' &&
@@ -87,9 +109,10 @@ class SharedAudioManager {
             ? 'تعذر تشغيل هذا المقطع دون إنترنت. جرّب تحميل السورة أو التبديل لقارئ آخر.'
             : 'Unable to load audio stream. Check connection or play a downloaded surah.',
       });
+      void this.syncForegroundService(false);
     });
 
-    // Accurate played seconds tracker & sleep timer monitor
+    // Single authoritative 1-second loop for active listening seconds & sleep timer
     this.habitInterval = window.setInterval(() => {
       const store = useQuranStore.getState();
       if (!this.audio.paused && !this.audio.ended && this.audio.readyState >= 2) {
@@ -98,23 +121,120 @@ class SharedAudioManager {
       this.checkSleepTimerTick();
     }, 1000);
 
-    this.setupMediaSessionHandlers();
+    void this.setupMediaSessionHandlers();
   }
 
-  private setupMediaSessionHandlers(): void {
+  private async ensureForegroundChannel(): Promise<void> {
+    if (this.foregroundChannelCreated || Capacitor.getPlatform() !== 'android') return;
+    try {
+      const perms = await ForegroundService.checkPermissions();
+      if (perms.display !== 'granted') {
+        await ForegroundService.requestPermissions();
+      }
+      await ForegroundService.createNotificationChannel({
+        id: PLAYBACK_CHANNEL_ID,
+        name: 'Quran Playback',
+        description: 'Keeps Quran audio playing with the screen off',
+        importance: Importance.Low,
+      });
+      this.foregroundChannelCreated = true;
+    } catch {
+      // Ignore permission or channel errors
+    }
+  }
+
+  private async syncForegroundService(active: boolean): Promise<void> {
+    if (Capacitor.getPlatform() !== 'android') return;
+    try {
+      if (active) {
+        await this.ensureForegroundChannel();
+        const store = useQuranStore.getState();
+        const surah = store.surahs.find((s) => s.number === store.currentSurahNumber);
+        const reciter = store.reciters.find((r) => r.id === store.currentReciterId);
+        const title = surah
+          ? store.playMode === 'ayah'
+            ? `${surah.englishName} · Ayah ${store.currentAyahNumber}`
+            : `${surah.englishName} (${surah.name})`
+          : 'Quranfy';
+        const body = reciter ? reciter.nameEn : 'Quran Audio';
+
+        if (!this.foregroundRunning) {
+          await ForegroundService.startForegroundService({
+            id: PLAYBACK_NOTIFICATION_ID,
+            title,
+            body,
+            smallIcon: 'ic_stat_quranfy',
+            notificationChannelId: PLAYBACK_CHANNEL_ID,
+            silent: true,
+          });
+          this.foregroundRunning = true;
+        } else {
+          await ForegroundService.updateForegroundService({
+            id: PLAYBACK_NOTIFICATION_ID,
+            title,
+            body,
+            smallIcon: 'ic_stat_quranfy',
+            notificationChannelId: PLAYBACK_CHANNEL_ID,
+            silent: true,
+          });
+        }
+      } else if (this.foregroundRunning) {
+        await ForegroundService.stopForegroundService();
+        this.foregroundRunning = false;
+      }
+    } catch {
+      // Ignore foreground service issues
+    }
+  }
+
+  private async setupMediaSessionHandlers(): Promise<void> {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await MediaSession.setActionHandler({action: 'play'}, () => {
+          void this.resume();
+        });
+        await MediaSession.setActionHandler({action: 'pause'}, () => {
+          this.pause();
+        });
+        await MediaSession.setActionHandler({action: 'previoustrack'}, () => {
+          void this.playPrevious();
+        });
+        await MediaSession.setActionHandler({action: 'nexttrack'}, () => {
+          void this.playNext();
+        });
+        await MediaSession.setActionHandler({action: 'seekbackward'}, () => {
+          this.seekTo(Math.max(0, (this.audio.currentTime || 0) - 10));
+        });
+        await MediaSession.setActionHandler({action: 'seekforward'}, () => {
+          this.seekTo(Math.min(this.audio.duration || 0, (this.audio.currentTime || 0) + 10));
+        });
+        await MediaSession.setActionHandler({action: 'seekto'}, (details) => {
+          if (typeof details.seekTime === 'number') {
+            this.seekTo(details.seekTime);
+          }
+        });
+        await MediaSession.setActionHandler({action: 'stop'}, () => {
+          this.pause();
+        });
+        return;
+      } catch {
+        // Fallback to Web Media Session API
+      }
+    }
+
     if (!('mediaSession' in navigator)) return;
     try {
       navigator.mediaSession.setActionHandler('play', () => {
-        this.resume();
+        void this.resume();
       });
       navigator.mediaSession.setActionHandler('pause', () => {
         this.pause();
       });
       navigator.mediaSession.setActionHandler('previoustrack', () => {
-        this.playPrevious();
+        void this.playPrevious();
       });
       navigator.mediaSession.setActionHandler('nexttrack', () => {
-        this.playNext();
+        void this.playNext();
       });
       navigator.mediaSession.setActionHandler('seekbackward', (details) => {
         const offset = details.seekOffset || 10;
@@ -130,12 +250,34 @@ class SharedAudioManager {
         }
       });
     } catch {
-      // Some webviews restrict specific handlers
+      // Some browsers restrict specific handlers
     }
   }
 
-  private updateMediaSession(): void {
-    if (!('mediaSession' in navigator)) return;
+  private async syncPositionState(): Promise<void> {
+    const duration = Number.isFinite(this.audio.duration) ? this.audio.duration : 0;
+    const position = Math.min(this.audio.currentTime || 0, duration || 0);
+    const playbackRate = this.audio.playbackRate || 1;
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await MediaSession.setPositionState({duration, position, playbackRate});
+        return;
+      } catch {
+        // Fallback
+      }
+    }
+
+    if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession && duration > 0) {
+      try {
+        navigator.mediaSession.setPositionState({duration, position, playbackRate});
+      } catch {
+        // Ignore invalid states
+      }
+    }
+  }
+
+  private async updateMediaSession(): Promise<void> {
     const store = useQuranStore.getState();
     const surah = store.surahs.find((s) => s.number === store.currentSurahNumber);
     const reciter = store.reciters.find((r) => r.id === store.currentReciterId);
@@ -146,16 +288,38 @@ class SharedAudioManager {
         ? `${surah.englishName} · Ayah ${store.currentAyahNumber}`
         : `${surah.englishName} (${surah.name})`;
 
+    const artwork = [
+      {src: './pwa-192x192.png', sizes: '192x192', type: 'image/png'},
+      {src: './pwa-512x512.png', sizes: '512x512', type: 'image/png'},
+    ];
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await MediaSession.setMetadata({
+          title,
+          artist: reciter.nameEn,
+          album: 'Quranfy',
+          artwork,
+        });
+        await MediaSession.setPlaybackState({
+          playbackState: store.isPlaying ? 'playing' : 'paused',
+        });
+        await this.syncPositionState();
+        return;
+      } catch {
+        // Fallback
+      }
+    }
+
+    if (!('mediaSession' in navigator)) return;
     navigator.mediaSession.metadata = new MediaMetadata({
       title,
       artist: reciter.nameEn,
       album: 'Quranfy',
-      artwork: [
-        {src: './pwa-192x192.png', sizes: '192x192', type: 'image/png'},
-        {src: './pwa-512x512.png', sizes: '512x512', type: 'image/png'},
-      ],
+      artwork,
     });
     navigator.mediaSession.playbackState = store.isPlaying ? 'playing' : 'paused';
+    await this.syncPositionState();
   }
 
   private checkSleepTimerTick(): void {
@@ -164,9 +328,7 @@ class SharedAudioManager {
     if (!endsAt || !store.isPlaying) return;
 
     const remainingMs = endsAt - Date.now();
-    if (remainingMs <= 5000 && remainingMs > 0 && !store.isFadingOut) {
-      this.triggerFadeOutAndSleep();
-    } else if (remainingMs <= 0 && !store.isFadingOut) {
+    if (remainingMs <= 5000 && !store.isFadingOut) {
       this.triggerFadeOutAndSleep();
     }
   }
@@ -192,8 +354,10 @@ class SharedAudioManager {
         this.audio.volume = 1;
         const s = useQuranStore.getState();
         s.setSleepTimer(null);
-        s.setAmbientSound(null);
+        s.clearAmbientMix();
         s.setPlaybackRuntime({isPlaying: false, isFadingOut: false});
+        ambientEngine.setRecitationActive(false);
+        void this.syncForegroundService(false);
       }
     }, 200);
   }
@@ -249,7 +413,18 @@ class SharedAudioManager {
 
     if (store.playMode === 'surah') {
       const offlineRecord = await getAudioDownload(reciter.id, store.currentSurahNumber);
-      if (offlineRecord?.blob) {
+      if (offlineRecord?.nativeFilePath && Capacitor.isNativePlatform()) {
+        try {
+          const uriRes = await Filesystem.getUri({
+            path: offlineRecord.nativeFilePath,
+            directory: Directory.Data,
+          });
+          sourceUrl = Capacitor.convertFileSrc(uriRes.uri);
+          isOffline = true;
+        } catch {
+          sourceUrl = getSurahAudioUrl(reciter, store.currentSurahNumber);
+        }
+      } else if (offlineRecord?.blob) {
         this.currentBlobUrl = URL.createObjectURL(offlineRecord.blob);
         sourceUrl = this.currentBlobUrl;
         isOffline = true;
@@ -278,15 +453,14 @@ class SharedAudioManager {
     }
     this.audio.playbackRate = store.playbackSpeed;
 
-    // Sync ambient sound if user selected one
-    if (store.ambientSound) {
-      ambientEngine.start(store.ambientSound, store.ambientVolume);
-    }
+    ambientEngine.setRecitationActive(true);
+    void ambientEngine.syncMix(store.ambientMix);
 
     try {
       await this.audio.play();
       store.setPlaybackRuntime({isPlaying: true});
     } catch {
+      ambientEngine.setRecitationActive(false);
       store.setPlaybackRuntime({isPlaying: false, isLoadingAudio: false});
     }
   }
@@ -312,9 +486,8 @@ class SharedAudioManager {
       await this.loadAndPlayCurrent(store.resumePositionSec);
       return;
     }
-    if (store.ambientSound) {
-      ambientEngine.start(store.ambientSound, store.ambientVolume);
-    }
+    ambientEngine.setRecitationActive(true);
+    void ambientEngine.syncMix(store.ambientMix);
     this.audio.playbackRate = store.playbackSpeed;
     try {
       await this.audio.play();
@@ -327,6 +500,7 @@ class SharedAudioManager {
   public pause(): void {
     this.audio.pause();
     useQuranStore.getState().setPlaybackRuntime({isPlaying: false});
+    void this.syncForegroundService(false);
   }
 
   public seekTo(seconds: number): void {
@@ -334,11 +508,13 @@ class SharedAudioManager {
     const clamped = Math.max(0, Math.min(seconds, this.audio.duration || seconds));
     this.audio.currentTime = clamped;
     useQuranStore.getState().setPlaybackRuntime({currentTimeSec: clamped});
+    void this.syncPositionState();
   }
 
   public setSpeed(speed: number): void {
     this.audio.playbackRate = speed;
     useQuranStore.getState().setPlaybackSpeed(speed);
+    void this.syncPositionState();
   }
 
   public async playNext(): Promise<void> {
@@ -390,17 +566,17 @@ class SharedAudioManager {
   private async handleTrackEnded(): Promise<void> {
     const store = useQuranStore.getState();
 
-    // Sleep timer "end-of-surah" stops gracefully after surah finishes
     if (store.sleepTimerSetting === 'end-of-surah' && store.playMode === 'surah') {
       store.setSleepTimer(null);
-      store.setAmbientSound(null);
+      store.clearAmbientMix();
       ambientEngine.fadeOutAndStop(3);
+      ambientEngine.setRecitationActive(false);
       store.setPlaybackRuntime({isPlaying: false});
+      void this.syncForegroundService(false);
       return;
     }
 
     if (store.playMode === 'ayah') {
-      // Repeat current ayah N times
       if (store.ayahRepeatCurrent < store.ayahRepeatTarget) {
         store.setPlaybackRuntime({ayahRepeatCurrent: store.ayahRepeatCurrent + 1});
         this.audio.currentTime = 0;
@@ -412,7 +588,6 @@ class SharedAudioManager {
       const surah = store.surahs.find((s) => s.number === store.currentSurahNumber);
       const maxAyah = surah?.numberOfAyahs || 7;
 
-      // Ayah Range loop
       if (store.ayahRangeEnabled) {
         const nextInRange =
           store.currentAyahNumber < store.ayahRangeEnd
@@ -429,6 +604,7 @@ class SharedAudioManager {
         }
       } else {
         store.setPlaybackRuntime({isPlaying: false});
+        void this.syncForegroundService(false);
         return;
       }
     }
@@ -444,6 +620,7 @@ class SharedAudioManager {
       await this.playNext();
     } else {
       store.setPlaybackRuntime({isPlaying: false});
+      void this.syncForegroundService(false);
     }
   }
 }

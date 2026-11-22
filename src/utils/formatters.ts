@@ -1,3 +1,5 @@
+import {AppLanguage} from '../types/quran';
+
 export function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
   const total = Math.floor(seconds);
@@ -19,15 +21,20 @@ export function formatBytes(bytes: number): string {
   return `${mb.toFixed(1)} MB`;
 }
 
-export function formatMinutesLabel(seconds: number, lang: 'en' | 'ar'): string {
+export function formatMinutesLabel(seconds: number, lang: AppLanguage): string {
   const mins = Math.floor(seconds / 60);
   if (mins < 60) {
-    return lang === 'ar' ? `${mins} د` : `${mins}m`;
+    if (lang === 'ar') return `${mins} د`;
+    if (lang === 'bn') return `${mins} মি.`;
+    return `${mins}m`;
   }
   const hrs = Math.floor(mins / 60);
   const rem = mins % 60;
   if (lang === 'ar') {
     return rem > 0 ? `${hrs} س ${rem} د` : `${hrs} س`;
+  }
+  if (lang === 'bn') {
+    return rem > 0 ? `${hrs} ঘ. ${rem} মি.` : `${hrs} ঘ.`;
   }
   return rem > 0 ? `${hrs}h ${rem}m` : `${hrs}h`;
 }

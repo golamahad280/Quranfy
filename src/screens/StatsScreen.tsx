@@ -44,9 +44,12 @@ export const StatsScreen: React.FC = () => {
       const m = String(d.getMonth() + 1).padStart(2, '0');
       const day = String(d.getDate()).padStart(2, '0');
       const key = `${y}-${m}-${day}`;
-      const label = d.toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-US', {
-        weekday: 'short',
-      });
+      const label = d.toLocaleDateString(
+        lang === 'ar' ? 'ar-SA' : lang === 'bn' ? 'bn-BD' : 'en-US',
+        {
+          weekday: 'short',
+        }
+      );
       arr.push({
         key,
         label,
@@ -71,21 +74,21 @@ export const StatsScreen: React.FC = () => {
 
   return (
     <div className="space-y-6 pb-8">
-      <h2 className="text-lg font-bold text-[#13201C] dark:text-[#ECF2EF]">{t.stats.title}</h2>
+      <h2 className="text-lg font-bold text-ink dark:text-ink-dark">{t.stats.title}</h2>
 
       {/* Top 2 Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {/* Daily Goal Ring Card */}
-        <div className="rounded-3xl bg-white dark:bg-[#131F1C] border border-black/8 dark:border-white/10 p-5 flex items-center justify-between gap-4">
+        <div className="rounded-3xl glass-strong p-5 flex items-center justify-between gap-4">
           <div>
-            <p className="text-xs font-medium text-[#546660] dark:text-[#96ABA3]">
+            <p className="text-xs font-medium text-muted dark:text-muted-dark">
               {t.stats.todayProgress}
             </p>
-            <p className="text-2xl font-bold text-[#13201C] dark:text-[#ECF2EF] mt-1 tabular-nums">
-              {todayMinutes} / {dailyGoalMinutes} {lang === 'ar' ? 'د' : 'min'}
+            <p className="text-2xl font-bold text-ink dark:text-ink-dark mt-1 tabular-nums">
+              {todayMinutes} / {dailyGoalMinutes} {lang === 'ar' ? 'د' : lang === 'bn' ? 'মি.' : 'min'}
             </p>
-            <p className="text-xs text-[#0F5C4D] dark:text-[#4ECBA9] mt-1 tabular-nums">
-              {goalPct}% {lang === 'ar' ? 'من الهدف اليومي' : 'of daily goal'}
+            <p className="text-xs font-semibold text-brand-700 dark:text-accent mt-1 tabular-nums">
+              {goalPct}% {lang === 'ar' ? 'من الهدف اليومي' : lang === 'bn' ? 'দৈনিক লক্ষ্যের' : 'of daily goal'}
             </p>
           </div>
 
@@ -97,7 +100,7 @@ export const StatsScreen: React.FC = () => {
                 r={radius}
                 strokeWidth="8"
                 fill="none"
-                className="stroke-[#E5ECE8] dark:stroke-[#1E2F29]"
+                className="stroke-brand-200 dark:stroke-white/12"
               />
               <circle
                 cx="42"
@@ -108,7 +111,7 @@ export const StatsScreen: React.FC = () => {
                 strokeLinecap="round"
                 strokeDasharray={circumference}
                 strokeDashoffset={strokeOffset}
-                className="stroke-[#0F5C4D] dark:stroke-[#4ECBA9] transition-all duration-500"
+                className="stroke-brand-600 dark:stroke-accent transition-all duration-500"
               />
             </svg>
             <span className="absolute text-xs font-bold tabular-nums">{goalPct}%</span>
@@ -116,31 +119,31 @@ export const StatsScreen: React.FC = () => {
         </div>
 
         {/* Streak & Total Card */}
-        <div className="rounded-3xl bg-white dark:bg-[#131F1C] border border-black/8 dark:border-white/10 p-5 flex flex-col justify-between">
+        <div className="rounded-3xl glass-strong p-5 flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium text-[#546660] dark:text-[#96ABA3]">
+              <p className="text-xs font-medium text-muted dark:text-muted-dark">
                 {t.stats.streak}
               </p>
-              <p className="text-2xl font-bold text-[#13201C] dark:text-[#ECF2EF] mt-1 tabular-nums">
+              <p className="text-2xl font-bold text-ink dark:text-ink-dark mt-1 tabular-nums">
                 {streakDays} {t.stats.days}
               </p>
             </div>
-            <div className="w-12 h-12 rounded-2xl bg-[#C69749]/15 text-[#C69749] flex items-center justify-center">
+            <div className="w-12 h-12 rounded-2xl bg-accent/20 text-accent-600 dark:text-accent flex items-center justify-center">
               <Flame className="w-6 h-6" />
             </div>
           </div>
-          <p className="text-xs text-[#546660] dark:text-[#96ABA3] mt-3 tabular-nums">
+          <p className="text-xs text-muted dark:text-muted-dark mt-3 tabular-nums">
             {t.stats.totalTime}: {formatMinutesLabel(totalSecondsAllTime, lang)}
           </p>
         </div>
       </div>
 
       {/* 7-Day Listening Chart */}
-      <div className="rounded-3xl bg-white dark:bg-[#131F1C] border border-black/8 dark:border-white/10 p-5">
+      <div className="rounded-3xl glass p-5">
         <div className="flex items-center justify-between mb-5">
-          <h3 className="text-sm font-semibold">{t.stats.thisWeek}</h3>
-          <span className="text-xs text-[#546660] dark:text-[#96ABA3] tabular-nums">
+          <h3 className="text-sm font-bold">{t.stats.thisWeek}</h3>
+          <span className="text-xs text-muted dark:text-muted-dark tabular-nums">
             {t.stats.dailyGoal}: {dailyGoalMinutes}m
           </span>
         </div>
@@ -151,20 +154,20 @@ export const StatsScreen: React.FC = () => {
             const metGoal = day.minutes >= dailyGoalMinutes;
             return (
               <div key={day.key} className="flex flex-col items-center gap-2 h-full justify-end">
-                <span className="text-[11px] font-medium text-[#546660] dark:text-[#96ABA3] tabular-nums">
+                <span className="text-[11px] font-medium text-muted dark:text-muted-dark tabular-nums">
                   {day.minutes}m
                 </span>
-                <div className="w-full max-w-[34px] flex-1 flex items-end justify-center bg-[#F3F6F4] dark:bg-[#192823] rounded-xl overflow-hidden">
+                <div className="w-full max-w-[34px] flex-1 flex items-end justify-center bg-brand-600/10 dark:bg-white/10 rounded-xl overflow-hidden">
                   <div
                     className={`w-full rounded-xl transition-all duration-300 ${
                       metGoal
-                        ? 'bg-[#0F5C4D] dark:bg-[#4ECBA9]'
-                        : 'bg-[#0F5C4D]/45 dark:bg-[#4ECBA9]/45'
+                        ? 'bg-brand-600 dark:bg-accent'
+                        : 'bg-brand-600/45 dark:bg-accent/45'
                     }`}
                     style={{height: `${heightPct}%`}}
                   />
                 </div>
-                <span className="text-[11px] text-[#546660] dark:text-[#96ABA3]">{day.label}</span>
+                <span className="text-[11px] text-muted dark:text-muted-dark">{day.label}</span>
               </div>
             );
           })}
@@ -172,10 +175,10 @@ export const StatsScreen: React.FC = () => {
       </div>
 
       {/* Daily Goal Selector */}
-      <div className="rounded-3xl bg-white dark:bg-[#131F1C] border border-black/8 dark:border-white/10 p-5">
+      <div className="rounded-3xl glass p-5">
         <div className="flex items-center gap-2.5 mb-3">
-          <Target className="w-4 h-4 text-[#0F5C4D] dark:text-[#4ECBA9]" />
-          <h3 className="text-sm font-semibold">{t.stats.goalMinutes}</h3>
+          <Target className="w-4 h-4 text-brand-600 dark:text-accent" />
+          <h3 className="text-sm font-bold">{t.stats.goalMinutes}</h3>
         </div>
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
           {[10, 15, 20, 30, 45, 60].map((m) => (
@@ -183,28 +186,28 @@ export const StatsScreen: React.FC = () => {
               key={m}
               type="button"
               onClick={() => setDailyGoalMinutes(m)}
-              className={`min-h-[42px] rounded-2xl text-xs font-semibold tabular-nums transition-colors ${
+              className={`md-ripple min-h-[48px] rounded-2xl text-xs font-semibold tabular-nums transition-colors ${
                 dailyGoalMinutes === m
-                  ? 'bg-[#0F5C4D] text-white dark:bg-[#4ECBA9] dark:text-[#081A15]'
-                  : 'bg-[#F3F6F4] dark:bg-[#192823] text-[#13201C] dark:text-[#DCE6E2]'
+                  ? 'bg-brand-600 text-white dark:bg-accent dark:text-brand-950 shadow-sm'
+                  : 'glass text-ink dark:text-ink-dark'
               }`}
             >
-              {m} {lang === 'ar' ? 'د' : 'min'}
+              {m} {lang === 'ar' ? 'د' : lang === 'bn' ? 'মি.' : 'min'}
             </button>
           ))}
         </div>
       </div>
 
       {/* Daily Local Notification Reminder */}
-      <div className="rounded-3xl bg-white dark:bg-[#131F1C] border border-black/8 dark:border-white/10 p-5 space-y-4">
+      <div className="rounded-3xl glass p-5 space-y-4">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-[#EDF3F0] dark:bg-[#1B2B25] text-[#0F5C4D] dark:text-[#4ECBA9] flex items-center justify-center shrink-0">
+            <div className="w-11 h-11 rounded-2xl bg-brand-600/14 dark:bg-white/10 text-brand-700 dark:text-accent flex items-center justify-center shrink-0">
               <Bell className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold">{t.stats.reminderTitle}</h3>
-              <p className="text-xs text-[#546660] dark:text-[#96ABA3] mt-0.5">
+              <h3 className="text-sm font-bold">{t.stats.reminderTitle}</h3>
+              <p className="text-xs text-muted dark:text-muted-dark mt-0.5">
                 {t.stats.reminderDesc}
               </p>
             </div>
@@ -215,18 +218,18 @@ export const StatsScreen: React.FC = () => {
             checked={reminderEnabled}
             onChange={(e) => handleToggleReminder(e.target.checked)}
             aria-label={t.stats.enableReminder}
-            className="w-5 h-5 accent-[#0F5C4D] dark:accent-[#4ECBA9] cursor-pointer mt-1"
+            className="w-5 h-5 accent-brand-600 dark:accent-accent cursor-pointer mt-1"
           />
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-black/6 dark:border-white/8">
-          <label className="flex items-center gap-2 text-xs font-medium">
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-brand-500/12 dark:border-white/10">
+          <label className="flex items-center gap-2 text-xs font-semibold">
             <span>{t.stats.reminderTime}</span>
             <input
               type="time"
               value={reminderTime}
               onChange={(e) => handleToggleReminder(reminderEnabled, e.target.value)}
-              className="min-h-[40px] rounded-xl bg-[#F3F6F4] dark:bg-[#192823] px-3 text-xs tabular-nums"
+              className="min-h-[44px] rounded-2xl glass px-3 text-xs tabular-nums"
             />
           </label>
 
@@ -244,14 +247,14 @@ export const StatsScreen: React.FC = () => {
                   : 'Notification permission needed'
               );
             }}
-            className="md-ripple px-4 min-h-[40px] rounded-xl bg-[#EDF3F0] dark:bg-[#1B2B25] text-xs font-semibold text-[#0F5C4D] dark:text-[#4ECBA9]"
+            className="md-ripple px-4 min-h-[44px] rounded-2xl bg-brand-600/14 dark:bg-white/10 text-xs font-semibold text-brand-700 dark:text-accent"
           >
             {t.stats.testReminder}
           </button>
         </div>
 
         {reminderStatus && (
-          <p className="text-xs text-[#0F5C4D] dark:text-[#4ECBA9]">{reminderStatus}</p>
+          <p className="text-xs font-medium text-brand-700 dark:text-accent">{reminderStatus}</p>
         )}
       </div>
     </div>

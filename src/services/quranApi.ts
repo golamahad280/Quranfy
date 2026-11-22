@@ -1,25 +1,44 @@
+import {Capacitor} from '@capacitor/core';
+import {Directory, Filesystem} from '@capacitor/filesystem';
 import {FEATURED_RECITERS} from '../data/recitersAndPlaylists';
 import {SURAHS} from '../data/surahs';
 import {AyahItem, DownloadRecord, Reciter, SurahDetail, SurahMeta} from '../types/quran';
 import {
+  getCachedBanglaSurah,
   getCachedSurah,
   getMetaCache,
+  NATIVE_AUDIO_DIR,
   saveAudioDownload,
+  saveCachedBanglaSurah,
   saveCachedSurah,
   saveMetaCache,
 } from './db';
 
 const ALQURAN_BASE = 'https://api.alquran.cloud/v1';
 const MP3QURAN_BASE = 'https://mp3quran.net/api/v3';
+const BANGLA_QURAN_MIRRORS = [
+  'https://cdn.jsdelivr.net/gh/fawazahmed0/quran-api@1/editions/ben-muhiuddinkhan',
+  'https://fastly.jsdelivr.net/gh/fawazahmed0/quran-api@1/editions/ben-muhiuddinkhan',
+  'https://raw.githubusercontent.com/fawazahmed0/quran-api/1/editions/ben-muhiuddinkhan',
+];
 
 export function pad3(n: number): string {
   return String(n).padStart(3, '0');
 }
 
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const slice = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+    binary += String.fromCharCode(...slice);
+  }
+  return btoa(binary);
+}
+
 export async function fetchSurahList(): Promise<SurahMeta[]> {
   const cached = await getMetaCache<SurahMeta[]>('surah_list');
   if (cached && cached.length === 114) {
-    // Refresh silently in background if online
     if (navigator.onLine) {
       fetch(`${ALQURAN_BASE}/surah`)
         .then((r) => (r.ok ? r.json() : null))
@@ -100,6 +119,41 @@ export async function fetchSurahWithTranslation(
   return detail;
 }
 
+export async function fetchBanglaSurah(surahNumber: number): Promise<Record<number, string>> {
+  const cached = await getCachedBanglaSurah(surahNumber);
+  if (cached && Object.keys(cached).length > 0) {
+    return cached;
+  }
+
+  let lastError: Error | null = null;
+  for (const base of BANGLA_QURAN_MIRRORS) {
+    try {
+      const res = await fetch(`${base}/${surahNumber}.min.json`);
+      if (!res.ok) {
+        lastError = new Error(`Bangla Quran CDN returned ${res.status}`);
+        continue;
+      }
+      const json = (await res.json()) as {
+        chapter?: Array<{chapter: number; verse: number; text: string}>;
+      };
+      const map: Record<number, string> = {};
+      if (Array.isArray(json?.chapter)) {
+        for (const row of json.chapter) {
+          map[row.verse] = row.text;
+        }
+      }
+      if (Object.keys(map).length > 0) {
+        await saveCachedBanglaSurah(surahNumber, map);
+        return map;
+      }
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error('Failed to load Bangla translation');
+    }
+  }
+
+  throw lastError || new Error('Unable to load Bangla translation from CDN.');
+}
+
 interface Mp3QuranReciterRaw {
   id: number;
   name: string;
@@ -132,7 +186,6 @@ export async function fetchLiveReciters(): Promise<Reciter[]> {
     const arData = (await arRes.json()) as {reciters: Mp3QuranReciterRaw[]};
     const arMap = new Map(arData.reciters.map((r) => [r.id, r.name]));
 
-    // Keep our 11 curated featured reciters first, enriched if needed, then add extra verified 114-surah reciters
     const featuredIds = new Set(FEATURED_RECITERS.map((r) => r.serverUrl));
     const extras: Reciter[] = [];
 
@@ -141,7 +194,6 @@ export async function fetchLiveReciters(): Promise<Reciter[]> {
       if (!moshaf?.server) continue;
       if (featuredIds.has(moshaf.server)) continue;
       const arName = arMap.get(r.id) || r.name;
-      // Avoid duplicates with featured reciters by checking common keywords
       const low = r.name.toLowerCase();
       if (
         low.includes('sudae') ||
@@ -253,43 +305,136 @@ export async function downloadSurahForOffline(
   onProgress?: (pct: number) => void
 ): Promise<DownloadRecord> {
   const url = getSurahAudioUrl(reciter, surah.number);
-  const response = await fetch(url);
+  let response: Response;
+
+  try {
+    response = await fetch(url);
+  } catch {
+    throw new Error(
+      'Network or CORS error while downloading audio. Check your connection or try another reciter.'
+    );
+  }
+
   if (!response.ok) {
-    throw new Error('Unable to download surah audio');
+    throw new Error(`Audio server returned status ${response.status}. Please try another reciter.`);
   }
 
   const contentLength = Number(response.headers.get('content-length') || 0);
-  let blob: Blob;
+  const key = `${reciter.id}_${surah.number}`;
 
-  if (response.body && contentLength > 0) {
-    const reader = response.body.getReader();
-    const chunks: Uint8Array[] = [];
-    let received = 0;
+  // Native Capacitor path: stream chunks straight to Filesystem without full in-memory merge
+  if (Capacitor.isNativePlatform()) {
+    const filePath = `${NATIVE_AUDIO_DIR}/${key}.mp3`;
+    try {
+      await Filesystem.mkdir({
+        path: NATIVE_AUDIO_DIR,
+        directory: Directory.Data,
+        recursive: true,
+      });
+    } catch {
+      // Directory already exists
+    }
 
-    while (true) {
-      const {done, value} = await reader.read();
-      if (done) break;
-      if (value) {
-        chunks.push(value);
-        received += value.length;
-        onProgress?.(Math.min(99, Math.round((received / contentLength) * 100)));
+    let totalBytes = 0;
+    let isFirstChunk = true;
+
+    try {
+      if (response.body) {
+        const reader = response.body.getReader();
+        while (true) {
+          const {done, value} = await reader.read();
+          if (done) break;
+          if (!value || value.length === 0) continue;
+
+          const base64Chunk = uint8ArrayToBase64(value);
+          if (isFirstChunk) {
+            await Filesystem.writeFile({
+              path: filePath,
+              data: base64Chunk,
+              directory: Directory.Data,
+              recursive: true,
+            });
+            isFirstChunk = false;
+          } else {
+            await Filesystem.appendFile({
+              path: filePath,
+              data: base64Chunk,
+              directory: Directory.Data,
+            });
+          }
+
+          totalBytes += value.length;
+          if (contentLength > 0) {
+            onProgress?.(Math.min(99, Math.round((totalBytes / contentLength) * 100)));
+          }
+        }
+      } else {
+        const buffer = new Uint8Array(await response.arrayBuffer());
+        totalBytes = buffer.length;
+        await Filesystem.writeFile({
+          path: filePath,
+          data: uint8ArrayToBase64(buffer),
+          directory: Directory.Data,
+          recursive: true,
+        });
       }
+    } catch {
+      try {
+        await Filesystem.deleteFile({path: filePath, directory: Directory.Data});
+      } catch {
+        // Ignore cleanup failure
+      }
+      throw new Error('Failed to write offline audio file to device storage.');
     }
-    const merged = new Uint8Array(received);
-    let offset = 0;
-    for (const chunk of chunks) {
-      merged.set(chunk, offset);
-      offset += chunk.length;
+
+    onProgress?.(100);
+
+    const record: DownloadRecord = {
+      key,
+      reciterId: reciter.id,
+      reciterNameEn: reciter.nameEn,
+      reciterNameAr: reciter.nameAr,
+      surahNumber: surah.number,
+      surahNameEn: surah.englishName,
+      surahNameAr: surah.name,
+      sizeBytes: totalBytes,
+      downloadedAt: Date.now(),
+      nativeFilePath: filePath,
+    };
+
+    await saveAudioDownload(record);
+    return record;
+  }
+
+  // Web fallback path: store Blob in IndexedDB
+  let blob: Blob;
+  try {
+    if (response.body && contentLength > 0) {
+      const reader = response.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let received = 0;
+
+      while (true) {
+        const {done, value} = await reader.read();
+        if (done) break;
+        if (value) {
+          chunks.push(value);
+          received += value.length;
+          onProgress?.(Math.min(99, Math.round((received / contentLength) * 100)));
+        }
+      }
+      blob = new Blob(chunks as BlobPart[], {type: 'audio/mpeg'});
+    } else {
+      blob = await response.blob();
     }
-    blob = new Blob([merged], {type: 'audio/mpeg'});
-  } else {
-    blob = await response.blob();
+  } catch {
+    throw new Error('Download interrupted due to network or CORS restrictions.');
   }
 
   onProgress?.(100);
 
   const record: DownloadRecord = {
-    key: `${reciter.id}_${surah.number}`,
+    key,
     reciterId: reciter.id,
     reciterNameEn: reciter.nameEn,
     reciterNameAr: reciter.nameAr,

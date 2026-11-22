@@ -79,21 +79,21 @@ export const SearchScreen: React.FC = () => {
     <div className="space-y-6 pb-8">
       {/* Search Input */}
       <div className="relative">
-        <Search className="w-5 h-5 absolute start-4 top-1/2 -translate-y-1/2 text-[#546660] dark:text-[#96ABA3]" />
+        <Search className="w-5 h-5 absolute start-4 top-1/2 -translate-y-1/2 text-muted dark:text-muted-dark z-10 pointer-events-none" />
         <input
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t.search.placeholder}
           aria-label={t.search.placeholder}
-          className="w-full min-h-[52px] rounded-2xl bg-white dark:bg-[#131F1C] border border-black/10 dark:border-white/10 ps-12 pe-12 text-sm text-[#13201C] dark:text-[#ECF2EF] outline-none focus:ring-2 focus:ring-[#0F5C4D] dark:focus:ring-[#4ECBA9]"
+          className="w-full min-h-[54px] rounded-3xl glass-strong ps-12 pe-12 text-sm text-ink dark:text-ink-dark outline-none focus:ring-2 focus:ring-brand-500 dark:focus:ring-accent"
         />
         {query && (
           <button
             type="button"
             onClick={() => setQuery('')}
             aria-label="Clear search"
-            className="absolute end-2 top-1/2 -translate-y-1/2 min-h-[40px] min-w-[40px] flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10"
+            className="absolute end-1.5 top-1/2 -translate-y-1/2 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full hover:bg-brand-500/10 dark:hover:bg-white/10"
           >
             <X className="w-4 h-4" />
           </button>
@@ -102,8 +102,8 @@ export const SearchScreen: React.FC = () => {
 
       {/* Quick Suggestions when empty */}
       {!clean && (
-        <div className="space-y-4">
-          <p className="text-xs font-medium text-[#546660] dark:text-[#96ABA3]">
+        <div className="space-y-3">
+          <p className="text-xs font-semibold text-muted dark:text-muted-dark">
             {lang === 'ar' ? 'عمليات بحث مقترحة' : 'Quick Searches'}
           </p>
           <div className="flex flex-wrap gap-2">
@@ -113,7 +113,7 @@ export const SearchScreen: React.FC = () => {
                   key={term}
                   type="button"
                   onClick={() => setQuery(term)}
-                  className="md-ripple px-3.5 min-h-[40px] rounded-xl bg-white dark:bg-[#131F1C] border border-black/8 dark:border-white/10 text-xs font-medium text-[#13201C] dark:text-[#DCE6E2]"
+                  className="md-ripple px-4 min-h-[44px] rounded-2xl glass text-xs font-semibold text-ink dark:text-ink-dark"
                 >
                   {term}
                 </button>
@@ -123,40 +123,38 @@ export const SearchScreen: React.FC = () => {
         </div>
       )}
 
-      {/* Grouped Results */}
+      {/* Empty Results */}
       {clean && !hasAnyResults && !searchingAyahs && (
-        <div className="rounded-3xl bg-white dark:bg-[#131F1C] border border-black/8 dark:border-white/10 p-8 text-center">
-          <p className="text-base font-semibold text-[#13201C] dark:text-[#ECF2EF]">
-            {t.search.noResults}
-          </p>
-          <p className="mt-1 text-xs text-[#546660] dark:text-[#96ABA3]">{t.search.tryAnother}</p>
+        <div className="rounded-3xl glass p-8 text-center">
+          <p className="text-base font-bold text-ink dark:text-ink-dark">{t.search.noResults}</p>
+          <p className="mt-1 text-xs text-muted dark:text-muted-dark">{t.search.tryAnother}</p>
         </div>
       )}
 
       {surahMatches.length > 0 && (
         <section>
-          <h2 className="text-sm font-bold text-[#0F5C4D] dark:text-[#4ECBA9] mb-2.5">
+          <h2 className="text-sm font-bold text-brand-700 dark:text-accent mb-2.5">
             {t.search.surahs} ({surahMatches.length})
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
             {surahMatches.slice(0, 12).map((s) => (
               <div
                 key={s.number}
-                className="rounded-2xl bg-white dark:bg-[#131F1C] border border-black/6 dark:border-white/8 p-3.5 flex items-center justify-between gap-2"
+                className="rounded-3xl glass p-4 flex items-center justify-between gap-2"
               >
                 <button
                   type="button"
                   onClick={() => openReader(s.number)}
-                  className="flex-1 min-w-0 text-start flex items-center gap-3 min-h-[44px]"
+                  className="flex-1 min-w-0 text-start flex items-center gap-3 min-h-[48px]"
                 >
-                  <span className="w-9 h-9 rounded-xl bg-[#EDF3F0] dark:bg-[#1B2B25] flex items-center justify-center text-xs font-bold tabular-nums shrink-0">
+                  <span className="w-10 h-10 rounded-2xl bg-brand-600/14 dark:bg-white/10 text-brand-700 dark:text-accent flex items-center justify-center text-xs font-bold tabular-nums shrink-0">
                     {s.number}
                   </span>
                   <div className="min-w-0">
                     <p className="text-sm font-semibold truncate">
                       {s.englishName} · <span className="font-quran-amiri">{s.name}</span>
                     </p>
-                    <p className="text-xs text-[#546660] dark:text-[#96ABA3] truncate">
+                    <p className="text-xs text-muted dark:text-muted-dark truncate">
                       {s.englishNameTranslation} · {s.numberOfAyahs} {t.home.ayahs}
                     </p>
                   </div>
@@ -165,7 +163,7 @@ export const SearchScreen: React.FC = () => {
                   type="button"
                   onClick={() => audioManager.playSurah(s.number, currentReciterId, 0)}
                   aria-label={`Play ${s.englishName}`}
-                  className="md-ripple min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl bg-[#0F5C4D] text-white dark:bg-[#4ECBA9] dark:text-[#081A15]"
+                  className="md-ripple min-h-[48px] min-w-[48px] flex items-center justify-center rounded-2xl bg-brand-600 text-white dark:bg-accent dark:text-brand-950"
                 >
                   <Play className="w-4 h-4 fill-current ms-0.5" />
                 </button>
@@ -177,26 +175,26 @@ export const SearchScreen: React.FC = () => {
 
       {reciterMatches.length > 0 && (
         <section>
-          <h2 className="text-sm font-bold text-[#0F5C4D] dark:text-[#4ECBA9] mb-2.5">
+          <h2 className="text-sm font-bold text-brand-700 dark:text-accent mb-2.5">
             {t.search.reciters} ({reciterMatches.length})
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
             {reciterMatches.slice(0, 10).map((r) => (
               <button
                 key={r.id}
                 type="button"
                 onClick={() => audioManager.playSurah(1, r.id, 0)}
-                className="md-ripple text-start rounded-2xl bg-white dark:bg-[#131F1C] border border-black/6 dark:border-white/8 p-3.5 flex items-center justify-between gap-3 min-h-[56px]"
+                className="md-ripple text-start rounded-3xl glass p-4 flex items-center justify-between gap-3 min-h-[60px]"
               >
                 <div className="min-w-0">
                   <p className="text-sm font-semibold truncate">
                     {lang === 'ar' ? r.nameAr : r.nameEn}
                   </p>
-                  <p className="text-xs text-[#546660] dark:text-[#96ABA3] truncate">
+                  <p className="text-xs text-muted dark:text-muted-dark truncate">
                     {lang === 'ar' ? r.nameEn : r.nameAr} · {lang === 'ar' ? r.styleAr : r.styleEn}
                   </p>
                 </div>
-                <UserCheck className="w-4 h-4 text-[#0F5C4D] dark:text-[#4ECBA9] shrink-0" />
+                <UserCheck className="w-4 h-4 text-brand-600 dark:text-accent shrink-0" />
               </button>
             ))}
           </div>
@@ -205,10 +203,10 @@ export const SearchScreen: React.FC = () => {
 
       {playlistMatches.length > 0 && (
         <section>
-          <h2 className="text-sm font-bold text-[#0F5C4D] dark:text-[#4ECBA9] mb-2.5">
+          <h2 className="text-sm font-bold text-brand-700 dark:text-accent mb-2.5">
             {t.search.playlists} ({playlistMatches.length})
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
             {playlistMatches.map((pl) => (
               <button
                 key={pl.id}
@@ -220,20 +218,20 @@ export const SearchScreen: React.FC = () => {
                   );
                   audioManager.loadAndPlayCurrent(0);
                 }}
-                className="md-ripple text-start rounded-2xl bg-white dark:bg-[#131F1C] border border-black/6 dark:border-white/8 p-3.5 flex items-center justify-between gap-3 min-h-[56px]"
+                className="md-ripple text-start rounded-3xl glass p-4 flex items-center justify-between gap-3 min-h-[60px]"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <ListMusic className="w-5 h-5 text-[#0F5C4D] dark:text-[#4ECBA9] shrink-0" />
+                  <ListMusic className="w-5 h-5 text-brand-600 dark:text-accent shrink-0" />
                   <div className="min-w-0">
                     <p className="text-sm font-semibold truncate">
                       {lang === 'ar' ? pl.nameAr : pl.nameEn}
                     </p>
-                    <p className="text-xs text-[#546660] dark:text-[#96ABA3] truncate">
+                    <p className="text-xs text-muted dark:text-muted-dark truncate">
                       {pl.items.length} {lang === 'ar' ? 'سور' : 'surahs'}
                     </p>
                   </div>
                 </div>
-                <Play className="w-4 h-4 text-[#0F5C4D] dark:text-[#4ECBA9] shrink-0" />
+                <Play className="w-4 h-4 text-brand-600 dark:text-accent shrink-0" />
               </button>
             ))}
           </div>
@@ -243,26 +241,26 @@ export const SearchScreen: React.FC = () => {
       {(searchingAyahs || ayahMatches.length > 0) && (
         <section>
           <div className="flex items-center gap-2 mb-2.5">
-            <h2 className="text-sm font-bold text-[#0F5C4D] dark:text-[#4ECBA9]">
-              {t.search.ayahs}
-            </h2>
-            {searchingAyahs && <Loader2 className="w-3.5 h-3.5 animate-spin text-[#0F5C4D]" />}
+            <h2 className="text-sm font-bold text-brand-700 dark:text-accent">{t.search.ayahs}</h2>
+            {searchingAyahs && (
+              <Loader2 className="w-4 h-4 animate-spin text-brand-600 dark:text-accent" />
+            )}
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             {ayahMatches.map((m, idx) => (
               <div
                 key={`${m.surahNumber}:${m.numberInSurah}:${idx}`}
-                className="rounded-2xl bg-white dark:bg-[#131F1C] border border-black/6 dark:border-white/8 p-4 flex items-start justify-between gap-3"
+                className="rounded-3xl glass p-4 flex items-start justify-between gap-3"
               >
                 <button
                   type="button"
                   onClick={() => openReader(m.surahNumber)}
                   className="text-start flex-1 min-w-0"
                 >
-                  <p className="text-xs font-semibold text-[#0F5C4D] dark:text-[#4ECBA9]">
+                  <p className="text-xs font-semibold text-brand-700 dark:text-accent">
                     {m.surahNameEn} ({m.surahNameAr}) · {m.surahNumber}:{m.numberInSurah}
                   </p>
-                  <p className="mt-1.5 text-sm text-[#13201C] dark:text-[#DCE6E2] leading-relaxed">
+                  <p className="mt-1.5 text-sm text-ink dark:text-ink-dark leading-relaxed">
                     {m.text}
                   </p>
                 </button>
@@ -271,7 +269,7 @@ export const SearchScreen: React.FC = () => {
                     type="button"
                     onClick={() => audioManager.playAyah(m.surahNumber, m.numberInSurah)}
                     aria-label="Play Ayah"
-                    className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl bg-[#EDF3F0] dark:bg-[#1B2B25] text-[#0F5C4D] dark:text-[#4ECBA9]"
+                    className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-2xl bg-brand-600/14 dark:bg-white/10 text-brand-700 dark:text-accent"
                   >
                     <Play className="w-4 h-4 fill-current" />
                   </button>
@@ -279,7 +277,7 @@ export const SearchScreen: React.FC = () => {
                     type="button"
                     onClick={() => openReader(m.surahNumber)}
                     aria-label="Read in Surah"
-                    className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl hover:bg-black/5 dark:hover:bg-white/10"
+                    className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-2xl hover:bg-brand-500/10 dark:hover:bg-white/10"
                   >
                     <BookOpen className="w-4 h-4" />
                   </button>

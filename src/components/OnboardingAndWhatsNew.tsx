@@ -1,6 +1,6 @@
 import {BookOpen, CheckCircle2, Headphones, Sparkles, X} from 'lucide-react';
 import React, {useState} from 'react';
-import {APP_VERSION, TRANSLATIONS} from '../data/i18n';
+import {APP_VERSION, pickLang, TRANSLATIONS} from '../data/i18n';
 import {useQuranStore} from '../store/useQuranStore';
 import {BrandLogo} from './BrandLogo';
 
@@ -37,30 +37,36 @@ export const OnboardingModal: React.FC = () => {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-brand-950/65 backdrop-blur-sm p-4"
       role="dialog"
       aria-modal="true"
       aria-label="Welcome to Quranfy"
     >
-      <div className="w-full max-w-md rounded-3xl bg-white dark:bg-[#131F1C] p-6 sm:p-8 shadow-2xl border border-black/8 dark:border-white/10">
+      <div className="w-full max-w-md rounded-3xl glass-strong p-6 sm:p-8 shadow-2xl">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-2.5">
-            <BrandLogo className="w-8 h-8" />
-            <span className="font-display font-bold text-base">{t.appName}</span>
+            <BrandLogo className="w-9 h-9" />
+            <span className="font-display font-bold text-base text-ink dark:text-ink-dark">
+              {t.appName}
+            </span>
           </div>
 
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => updateSettings({language: lang === 'en' ? 'ar' : 'en'})}
-              className="px-3 min-h-[36px] rounded-xl bg-[#EDF3F0] dark:bg-[#1C2D27] text-xs font-semibold text-[#0F5C4D] dark:text-[#4ECBA9]"
+              onClick={() =>
+                updateSettings({
+                  language: lang === 'en' ? 'ar' : lang === 'ar' ? 'bn' : 'en',
+                })
+              }
+              className="px-3.5 min-h-[40px] rounded-xl bg-brand-600/12 dark:bg-white/10 text-xs font-semibold text-brand-700 dark:text-accent"
             >
-              {lang === 'en' ? 'العربية' : 'English'}
+              {lang === 'en' ? 'العربية' : lang === 'ar' ? 'বাংলা' : 'English'}
             </button>
             <button
               type="button"
               onClick={completeOnboarding}
-              className="px-3 min-h-[36px] text-xs font-medium text-[#546660] dark:text-[#96ABA3] hover:text-[#13201C]"
+              className="px-3 min-h-[40px] text-xs font-semibold text-muted dark:text-muted-dark hover:text-ink dark:hover:text-ink-dark"
             >
               {t.onboarding.skip}
             </button>
@@ -68,13 +74,13 @@ export const OnboardingModal: React.FC = () => {
         </div>
 
         <div className="py-4 text-center">
-          <div className="w-16 h-16 rounded-3xl bg-[#0F5C4D]/10 dark:bg-[#4ECBA9]/15 text-[#0F5C4D] dark:text-[#4ECBA9] flex items-center justify-center mx-auto mb-5">
+          <div className="w-16 h-16 rounded-3xl bg-brand-600/14 dark:bg-accent/18 text-brand-600 dark:text-accent flex items-center justify-center mx-auto mb-5">
             <Icon className="w-8 h-8" />
           </div>
-          <h2 className="text-xl font-bold text-[#13201C] dark:text-[#ECF2EF] leading-snug">
+          <h2 className="text-xl font-bold text-ink dark:text-ink-dark leading-snug">
             {current.title}
           </h2>
-          <p className="mt-3 text-sm text-[#43544E] dark:text-[#A4B7B0] leading-relaxed">
+          <p className="mt-3 text-sm text-muted dark:text-muted-dark leading-relaxed">
             {current.body}
           </p>
         </div>
@@ -89,8 +95,8 @@ export const OnboardingModal: React.FC = () => {
               onClick={() => setStep(idx)}
               className={`h-2 rounded-full transition-all ${
                 idx === step
-                  ? 'w-6 bg-[#0F5C4D] dark:bg-[#4ECBA9]'
-                  : 'w-2 bg-black/15 dark:bg-white/20'
+                  ? 'w-6 bg-brand-600 dark:bg-accent'
+                  : 'w-2 bg-brand-900/20 dark:bg-white/25'
               }`}
             />
           ))}
@@ -105,7 +111,7 @@ export const OnboardingModal: React.FC = () => {
               completeOnboarding();
             }
           }}
-          className="md-ripple w-full min-h-[48px] rounded-2xl bg-[#0F5C4D] text-white dark:bg-[#4ECBA9] dark:text-[#081A15] text-sm font-semibold"
+          className="md-ripple w-full min-h-[48px] rounded-2xl bg-brand-600 text-white dark:bg-accent dark:text-brand-950 text-sm font-semibold shadow-sm"
         >
           {step < steps.length - 1 ? t.onboarding.next : t.onboarding.getStarted}
         </button>
@@ -138,41 +144,48 @@ export const WhatsNewModal: React.FC<WhatsNewModalProps> = ({forceOpen = false, 
   const highlights =
     lang === 'ar'
       ? [
-          'أوضاع الدراسة والعمل والنوم مع مازج أصوات طبيعية يعمل دون إنترنت',
-          'الاستماع آية بآية مع تكرار الآية أو نطاق آيات والتمرير التلقائي',
-          'التحميل المجاني دون إنترنت لجميع السور مع حفظ التقدم والروتين اليومي',
-          'تبديل كامل بين العربية (RTL) والإنجليزية والمظهر الداكن التلقائي',
+          'إضافة تفسير الآيات بالإنجليزية والبنغالية مباشرة داخل القارئ مع الحفظ للعمل دون إنترنت',
+          'إضافة الترجمة البنغالية للقرآن الكريم (محيي الدين خان) وإمكانية عرض العربية والإنجليزية والبنغالية معاً',
+          'قسم الحديث الشريف الجديد مع الكتب السبعة، البحث بالرقم والكلمات، والوضع دون إنترنت',
+          'الاستماع للأحاديث عبر محرك تحويل النص إلى كلام (TTS) بالعربية والإنجليزية والبنغالية',
+        ]
+      : lang === 'bn'
+      ? [
+          'রিডারে প্রতিটি আয়াতের ইংরেজি ও বাংলা তাফসীর (অফলাইন ক্যাশসহ)',
+          'বাংলা কুরআন অনুবাদ (মুহিউদ্দীন খান) এবং আরবি, ইংরেজি ও বাংলা একসাথে দেখার সুবিধা',
+          'নতুন হাদিস সেকশন: ৭টি হাদিস গ্রন্থ, নম্বর ও শব্দ অনুসন্ধান এবং অফলাইন সেভিং',
+          'আরবি, ইংরেজি ও বাংলায় টেক্সট-টু-স্পিচ (TTS) দিয়ে হাদিস শোনার সুবিধা',
         ]
       : [
-          'Study, Work, and Sleep focus modes with offline ambient sound mixer',
-          'Synced Ayah-by-Ayah reader with per-ayah repeat & range looping',
-          '100% free offline surah downloads stored privately on your device',
-          'Listening habit tracker, daily streaks, and local Android reminders',
+          'Per-ayah Quran Tafsir in English & Bangla (Quran.com v4) cached offline in IndexedDB',
+          'Bangla Quran translation (Muhiuddin Khan) alongside Arabic & English in any combination',
+          'New Hadith tab with 7 collections, book navigation, number/keyword search & favorites',
+          'Text-to-speech Hadith listening in Arabic, English & Bangla with speed & auto-next',
         ];
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-brand-950/65 backdrop-blur-sm p-4"
       role="dialog"
       aria-modal="true"
       aria-label="What's New"
       onClick={handleClose}
     >
       <div
-        className="w-full max-w-md rounded-3xl bg-white dark:bg-[#131F1C] p-6 shadow-2xl border border-black/8 dark:border-white/10"
+        className="w-full max-w-md rounded-3xl glass-strong p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-2xl bg-[#C69749]/15 text-[#C69749] flex items-center justify-center">
+            <div className="w-10 h-10 rounded-2xl bg-accent/20 text-accent-600 dark:text-accent flex items-center justify-center">
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold">
-                {lang === 'ar' ? 'ما الجديد في قرآنفاي' : "What's New in Quranfy"}
+              <h2 className="text-base font-bold text-ink dark:text-ink-dark">
+                {pickLang(lang, "What's New in Quranfy", 'ما الجديد في قرآنفاي', 'কুরআনফাইয়ের নতুন ফিচার')}
               </h2>
-              <p className="text-xs text-[#546660] dark:text-[#96ABA3]">
-                {lang === 'ar' ? `الإصدار ${APP_VERSION}` : `Release ${APP_VERSION}`}
+              <p className="text-xs text-muted dark:text-muted-dark">
+                {pickLang(lang, `Release ${APP_VERSION}`, `الإصدار ${APP_VERSION}`, `সংস্করণ ${APP_VERSION}`)}
               </p>
             </div>
           </div>
@@ -180,7 +193,7 @@ export const WhatsNewModal: React.FC<WhatsNewModalProps> = ({forceOpen = false, 
             type="button"
             onClick={handleClose}
             aria-label="Close"
-            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10"
+            className="min-h-[48px] min-w-[48px] flex items-center justify-center rounded-full hover:bg-brand-500/10 dark:hover:bg-white/10"
           >
             <X className="w-5 h-5" />
           </button>
@@ -188,8 +201,8 @@ export const WhatsNewModal: React.FC<WhatsNewModalProps> = ({forceOpen = false, 
 
         <ul className="space-y-3 my-4">
           {highlights.map((item, i) => (
-            <li key={i} className="flex items-start gap-2.5 text-sm text-[#283833] dark:text-[#DCE6E2]">
-              <CheckCircle2 className="w-4 h-4 text-[#0F5C4D] dark:text-[#4ECBA9] shrink-0 mt-0.5" />
+            <li key={i} className="flex items-start gap-2.5 text-sm text-ink dark:text-ink-dark">
+              <CheckCircle2 className="w-4 h-4 text-brand-600 dark:text-accent shrink-0 mt-0.5" />
               <span>{item}</span>
             </li>
           ))}
@@ -198,9 +211,9 @@ export const WhatsNewModal: React.FC<WhatsNewModalProps> = ({forceOpen = false, 
         <button
           type="button"
           onClick={handleClose}
-          className="md-ripple w-full min-h-[46px] rounded-2xl bg-[#0F5C4D] text-white dark:bg-[#4ECBA9] dark:text-[#081A15] text-sm font-semibold mt-2"
+          className="md-ripple w-full min-h-[48px] rounded-2xl bg-brand-600 text-white dark:bg-accent dark:text-brand-950 text-sm font-semibold mt-2"
         >
-          {lang === 'ar' ? 'متابعة' : 'Continue'}
+          {pickLang(lang, 'Continue', 'متابعة', 'চালিয়ে যান')}
         </button>
       </div>
     </div>

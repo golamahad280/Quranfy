@@ -89,16 +89,22 @@ export const LibraryScreen: React.FC = () => {
       setDownloadProgress(key, null);
       await refreshDownloads();
       showToast(lang === 'ar' ? 'تم الحفظ للاستماع دون إنترنت' : 'Downloaded for offline play');
-    } catch {
+    } catch (err) {
       setDownloadProgress(key, null);
-      showToast(lang === 'ar' ? 'فشل التحميل' : 'Download failed');
+      const msg =
+        err instanceof Error && err.message
+          ? err.message
+          : lang === 'ar'
+          ? 'فشل التحميل'
+          : 'Download failed';
+      showToast(msg);
     }
   };
 
   return (
     <div className="space-y-6 pb-8">
       {/* Sub-navigation Segmented Tabs */}
-      <div className="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-[#E5ECE8] dark:bg-[#16241F]">
+      <div className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl glass">
         {(
           [
             {id: 'playlists', label: t.library.playlists},
@@ -110,10 +116,10 @@ export const LibraryScreen: React.FC = () => {
             key={tab.id}
             type="button"
             onClick={() => setSubTab(tab.id)}
-            className={`min-h-[40px] rounded-xl text-xs font-semibold whitespace-nowrap transition-colors ${
+            className={`min-h-[44px] rounded-xl text-xs font-semibold whitespace-nowrap transition-colors ${
               subTab === tab.id
-                ? 'bg-white dark:bg-[#233730] text-[#13201C] dark:text-[#ECF2EF] shadow-sm'
-                : 'text-[#546660] dark:text-[#96ABA3]'
+                ? 'bg-brand-600 text-white dark:bg-accent dark:text-brand-950 shadow-sm'
+                : 'text-muted dark:text-muted-dark'
             }`}
           >
             {tab.label}
@@ -125,13 +131,11 @@ export const LibraryScreen: React.FC = () => {
       {subTab === 'playlists' && (
         <div className="space-y-6">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-lg font-bold text-[#13201C] dark:text-[#ECF2EF]">
-              {t.library.playlists}
-            </h2>
+            <h2 className="text-lg font-bold text-ink dark:text-ink-dark">{t.library.playlists}</h2>
             <button
               type="button"
               onClick={() => setShowCreateForm((v) => !v)}
-              className="md-ripple inline-flex items-center gap-1.5 px-4 min-h-[44px] rounded-2xl bg-[#0F5C4D] text-white dark:bg-[#4ECBA9] dark:text-[#081A15] text-xs font-semibold"
+              className="md-ripple inline-flex items-center gap-1.5 px-4 min-h-[48px] rounded-2xl bg-brand-600 text-white dark:bg-accent dark:text-brand-950 text-xs font-semibold shadow-sm"
             >
               <Plus className="w-4 h-4" />
               <span>{t.library.createPlaylist}</span>
@@ -147,26 +151,26 @@ export const LibraryScreen: React.FC = () => {
                 setNewPlaylistName('');
                 setShowCreateForm(false);
               }}
-              className="rounded-2xl bg-white dark:bg-[#131F1C] border border-black/10 dark:border-white/10 p-4 flex flex-col sm:flex-row gap-2.5"
+              className="rounded-3xl glass-strong p-4 flex flex-col sm:flex-row gap-2.5"
             >
               <input
                 type="text"
                 value={newPlaylistName}
                 onChange={(e) => setNewPlaylistName(e.target.value)}
                 placeholder={t.library.playlistName}
-                className="flex-1 min-h-[44px] rounded-xl bg-[#F3F6F4] dark:bg-[#192823] px-3.5 text-sm outline-none focus:ring-2 focus:ring-[#0F5C4D]"
+                className="flex-1 min-h-[48px] rounded-2xl glass px-4 text-sm outline-none focus:ring-2 focus:ring-brand-500 dark:focus:ring-accent"
               />
               <div className="flex items-center gap-2">
                 <button
                   type="submit"
-                  className="md-ripple px-5 min-h-[44px] rounded-xl bg-[#0F5C4D] text-white dark:bg-[#4ECBA9] dark:text-[#081A15] text-xs font-semibold"
+                  className="md-ripple px-5 min-h-[48px] rounded-2xl bg-brand-600 text-white dark:bg-accent dark:text-brand-950 text-xs font-semibold"
                 >
                   {t.library.create}
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowCreateForm(false)}
-                  className="px-4 min-h-[44px] rounded-xl bg-[#EDF3F0] dark:bg-[#1B2B25] text-xs font-medium"
+                  className="px-4 min-h-[48px] rounded-2xl glass text-xs font-semibold"
                 >
                   {t.library.cancel}
                 </button>
@@ -178,10 +182,7 @@ export const LibraryScreen: React.FC = () => {
           {customPlaylists.length > 0 && (
             <div className="space-y-4">
               {customPlaylists.map((pl) => (
-                <div
-                  key={pl.id}
-                  className="rounded-3xl bg-white dark:bg-[#131F1C] border border-black/8 dark:border-white/10 p-4 sm:p-5 space-y-4"
-                >
+                <div key={pl.id} className="rounded-3xl glass p-4 sm:p-5 space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     {editingId === pl.id ? (
                       <form
@@ -196,19 +197,21 @@ export const LibraryScreen: React.FC = () => {
                           type="text"
                           value={editingName}
                           onChange={(e) => setEditingName(e.target.value)}
-                          className="flex-1 min-h-[40px] rounded-xl bg-[#F3F6F4] dark:bg-[#192823] px-3 text-sm"
+                          className="flex-1 min-h-[44px] rounded-2xl glass px-3.5 text-sm"
                         />
                         <button
                           type="submit"
-                          className="px-3 min-h-[40px] rounded-xl bg-[#0F5C4D] text-white text-xs font-semibold"
+                          className="px-4 min-h-[44px] rounded-2xl bg-brand-600 text-white dark:bg-accent dark:text-brand-950 text-xs font-semibold"
                         >
                           OK
                         </button>
                       </form>
                     ) : (
                       <div>
-                        <h3 className="text-base font-bold">{pl.nameEn}</h3>
-                        <p className="text-xs text-[#546660] dark:text-[#96ABA3] tabular-nums">
+                        <h3 className="text-base font-bold text-ink dark:text-ink-dark">
+                          {pl.nameEn}
+                        </h3>
+                        <p className="text-xs text-muted dark:text-muted-dark tabular-nums">
                           {pl.items.length} {lang === 'ar' ? 'سور' : 'surahs'}
                         </p>
                       </div>
@@ -229,7 +232,7 @@ export const LibraryScreen: React.FC = () => {
                             audioManager.loadAndPlayCurrent(0);
                           }}
                           aria-label="Play Playlist"
-                          className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl bg-[#0F5C4D] text-white dark:bg-[#4ECBA9] dark:text-[#081A15]"
+                          className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-2xl bg-brand-600 text-white dark:bg-accent dark:text-brand-950"
                         >
                           <Play className="w-4 h-4 fill-current" />
                         </button>
@@ -240,7 +243,7 @@ export const LibraryScreen: React.FC = () => {
                           setAddingToPlaylistId(addingToPlaylistId === pl.id ? null : pl.id)
                         }
                         aria-label={t.library.addSurah}
-                        className="min-h-[40px] px-3 rounded-xl bg-[#EDF3F0] dark:bg-[#1B2B25] text-xs font-semibold flex items-center gap-1"
+                        className="min-h-[44px] px-3.5 rounded-2xl glass text-xs font-semibold flex items-center gap-1"
                       >
                         <Plus className="w-3.5 h-3.5" />
                         <span>{t.library.addSurah}</span>
@@ -252,7 +255,7 @@ export const LibraryScreen: React.FC = () => {
                           setEditingName(pl.nameEn);
                         }}
                         aria-label={t.library.rename}
-                        className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl hover:bg-black/5 dark:hover:bg-white/10"
+                        className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-2xl hover:bg-brand-500/10 dark:hover:bg-white/10"
                       >
                         <Pencil className="w-4 h-4" />
                       </button>
@@ -260,7 +263,7 @@ export const LibraryScreen: React.FC = () => {
                         type="button"
                         onClick={() => deletePlaylist(pl.id)}
                         aria-label={t.library.delete}
-                        className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl text-rose-600 hover:bg-rose-500/10"
+                        className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-2xl text-rose-500 hover:bg-rose-500/10"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -268,14 +271,18 @@ export const LibraryScreen: React.FC = () => {
                   </div>
 
                   {addingToPlaylistId === pl.id && (
-                    <div className="rounded-2xl bg-[#F3F6F4] dark:bg-[#192823] p-3 flex flex-wrap items-center gap-2">
+                    <div className="rounded-2xl glass-strong p-3 flex flex-wrap items-center gap-2">
                       <select
                         value={selectedSurahToAdd}
                         onChange={(e) => setSelectedSurahToAdd(Number(e.target.value))}
-                        className="flex-1 min-w-[160px] min-h-[40px] rounded-xl bg-white dark:bg-[#131F1C] px-3 text-xs"
+                        className="flex-1 min-w-[160px] min-h-[44px] rounded-xl glass px-3 text-xs"
                       >
                         {surahs.map((s) => (
-                          <option key={s.number} value={s.number}>
+                          <option
+                            key={s.number}
+                            value={s.number}
+                            className="bg-surface-light dark:bg-surface-dark"
+                          >
                             {s.number}. {s.englishName} ({s.name})
                           </option>
                         ))}
@@ -283,10 +290,14 @@ export const LibraryScreen: React.FC = () => {
                       <select
                         value={selectedReciterToAdd}
                         onChange={(e) => setSelectedReciterToAdd(e.target.value)}
-                        className="flex-1 min-w-[160px] min-h-[40px] rounded-xl bg-white dark:bg-[#131F1C] px-3 text-xs"
+                        className="flex-1 min-w-[160px] min-h-[44px] rounded-xl glass px-3 text-xs"
                       >
                         {reciters.map((r) => (
-                          <option key={r.id} value={r.id}>
+                          <option
+                            key={r.id}
+                            value={r.id}
+                            className="bg-surface-light dark:bg-surface-dark"
+                          >
                             {lang === 'ar' ? r.nameAr : r.nameEn}
                           </option>
                         ))}
@@ -297,7 +308,7 @@ export const LibraryScreen: React.FC = () => {
                           addToPlaylist(pl.id, selectedSurahToAdd, selectedReciterToAdd);
                           setAddingToPlaylistId(null);
                         }}
-                        className="min-h-[40px] px-4 rounded-xl bg-[#0F5C4D] text-white dark:bg-[#4ECBA9] dark:text-[#081A15] text-xs font-semibold"
+                        className="min-h-[44px] px-4 rounded-xl bg-brand-600 text-white dark:bg-accent dark:text-brand-950 text-xs font-semibold"
                       >
                         {lang === 'ar' ? 'إضافة' : 'Add'}
                       </button>
@@ -312,7 +323,7 @@ export const LibraryScreen: React.FC = () => {
                         return (
                           <div
                             key={item.id}
-                            className="rounded-xl bg-[#F6F8F7] dark:bg-[#192823] px-3 py-2 flex flex-wrap items-center justify-between gap-2"
+                            className="rounded-2xl bg-brand-600/8 dark:bg-white/6 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2"
                           >
                             <button
                               type="button"
@@ -326,7 +337,7 @@ export const LibraryScreen: React.FC = () => {
                                 );
                                 audioManager.loadAndPlayCurrent(0);
                               }}
-                              className="text-start min-w-0 flex-1"
+                              className="text-start min-w-0 flex-1 min-h-[40px]"
                             >
                               <p className="text-xs font-semibold truncate">
                                 {s.number}. {s.englishName} · {s.name}
@@ -340,10 +351,14 @@ export const LibraryScreen: React.FC = () => {
                                   updatePlaylistItemReciter(pl.id, item.id, e.target.value)
                                 }
                                 aria-label="Reciter"
-                                className="min-h-[34px] max-w-[140px] rounded-lg bg-white dark:bg-[#131F1C] px-2 text-[11px]"
+                                className="min-h-[38px] max-w-[140px] rounded-xl glass px-2 text-[11px]"
                               >
                                 {reciters.map((r) => (
-                                  <option key={r.id} value={r.id}>
+                                  <option
+                                    key={r.id}
+                                    value={r.id}
+                                    className="bg-surface-light dark:bg-surface-dark"
+                                  >
                                     {lang === 'ar' ? r.nameAr : r.nameEn}
                                   </option>
                                 ))}
@@ -353,7 +368,7 @@ export const LibraryScreen: React.FC = () => {
                                 disabled={idx === 0}
                                 onClick={() => movePlaylistItem(pl.id, item.id, 'up')}
                                 aria-label="Move up"
-                                className="min-h-[34px] min-w-[34px] flex items-center justify-center rounded-lg disabled:opacity-30"
+                                className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-xl disabled:opacity-30"
                               >
                                 <ArrowUp className="w-3.5 h-3.5" />
                               </button>
@@ -362,7 +377,7 @@ export const LibraryScreen: React.FC = () => {
                                 disabled={idx === pl.items.length - 1}
                                 onClick={() => movePlaylistItem(pl.id, item.id, 'down')}
                                 aria-label="Move down"
-                                className="min-h-[34px] min-w-[34px] flex items-center justify-center rounded-lg disabled:opacity-30"
+                                className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-xl disabled:opacity-30"
                               >
                                 <ArrowDown className="w-3.5 h-3.5" />
                               </button>
@@ -370,7 +385,7 @@ export const LibraryScreen: React.FC = () => {
                                 type="button"
                                 onClick={() => removeFromPlaylist(pl.id, item.id)}
                                 aria-label="Remove"
-                                className="min-h-[34px] min-w-[34px] flex items-center justify-center rounded-lg text-rose-500"
+                                className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-xl text-rose-500"
                               >
                                 <X className="w-3.5 h-3.5" />
                               </button>
@@ -387,24 +402,24 @@ export const LibraryScreen: React.FC = () => {
 
           {/* Curated Playlists */}
           <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-[#546660] dark:text-[#96ABA3]">
+            <h3 className="text-sm font-semibold text-muted dark:text-muted-dark">
               {lang === 'ar' ? 'القوائم المختارة' : 'Curated Collections'}
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {CURATED_PLAYLISTS.map((pl) => (
                 <div
                   key={pl.id}
-                  className="rounded-2xl bg-white dark:bg-[#131F1C] border border-black/8 dark:border-white/10 p-4 flex items-center justify-between gap-3"
+                  className="rounded-3xl glass p-4 flex items-center justify-between gap-3"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-11 h-11 rounded-2xl bg-[#EDF3F0] dark:bg-[#1B2B25] text-[#0F5C4D] dark:text-[#4ECBA9] flex items-center justify-center shrink-0">
+                    <div className="w-12 h-12 rounded-2xl bg-brand-600/14 dark:bg-white/10 text-brand-700 dark:text-accent flex items-center justify-center shrink-0">
                       <ListMusic className="w-5 h-5" />
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-semibold truncate">
                         {lang === 'ar' ? pl.nameAr : pl.nameEn}
                       </p>
-                      <p className="text-xs text-[#546660] dark:text-[#96ABA3] truncate">
+                      <p className="text-xs text-muted dark:text-muted-dark truncate">
                         {pl.mode ? t.modes[pl.mode] : ''} · {pl.items.length}{' '}
                         {lang === 'ar' ? 'سور' : 'surahs'}
                       </p>
@@ -423,7 +438,7 @@ export const LibraryScreen: React.FC = () => {
                       audioManager.loadAndPlayCurrent(0);
                     }}
                     aria-label={`Play ${pl.nameEn}`}
-                    className="md-ripple min-h-[44px] min-w-[44px] rounded-2xl bg-[#0F5C4D] text-white dark:bg-[#4ECBA9] dark:text-[#081A15] flex items-center justify-center shrink-0"
+                    className="md-ripple min-h-[48px] min-w-[48px] rounded-2xl bg-brand-600 text-white dark:bg-accent dark:text-brand-950 flex items-center justify-center shrink-0"
                   >
                     <Play className="w-4 h-4 fill-current ms-0.5" />
                   </button>
@@ -440,16 +455,14 @@ export const LibraryScreen: React.FC = () => {
           {favoriteSurahNumbers.length === 0 &&
           favoriteAyahs.length === 0 &&
           favoriteReciterIds.length === 0 ? (
-            <div className="rounded-3xl bg-white dark:bg-[#131F1C] border border-black/8 dark:border-white/10 p-8 text-center">
-              <p className="text-sm text-[#546660] dark:text-[#96ABA3]">
-                {t.library.emptyFavorites}
-              </p>
+            <div className="rounded-3xl glass p-8 text-center">
+              <p className="text-sm text-muted dark:text-muted-dark">{t.library.emptyFavorites}</p>
             </div>
           ) : (
             <>
               {favoriteSurahNumbers.length > 0 && (
                 <section>
-                  <h2 className="text-sm font-bold text-[#0F5C4D] dark:text-[#4ECBA9] mb-2.5">
+                  <h2 className="text-sm font-bold text-brand-700 dark:text-accent mb-2.5">
                     {t.library.favSurahs}
                   </h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
@@ -459,17 +472,17 @@ export const LibraryScreen: React.FC = () => {
                       return (
                         <div
                           key={s.number}
-                          className="rounded-2xl bg-white dark:bg-[#131F1C] border border-black/8 dark:border-white/10 p-3.5 flex items-center justify-between gap-2"
+                          className="rounded-3xl glass p-4 flex items-center justify-between gap-2"
                         >
                           <button
                             type="button"
                             onClick={() => openReader(s.number)}
-                            className="text-start flex-1 min-w-0 min-h-[44px]"
+                            className="text-start flex-1 min-w-0 min-h-[48px]"
                           >
                             <p className="text-sm font-semibold truncate">
                               {s.number}. {s.englishName} · {s.name}
                             </p>
-                            <p className="text-xs text-[#546660] dark:text-[#96ABA3]">
+                            <p className="text-xs text-muted dark:text-muted-dark">
                               {s.numberOfAyahs} {t.home.ayahs}
                             </p>
                           </button>
@@ -478,15 +491,15 @@ export const LibraryScreen: React.FC = () => {
                               type="button"
                               onClick={() => toggleFavoriteSurah(s.number)}
                               aria-label="Remove favorite"
-                              className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl"
+                              className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-2xl"
                             >
-                              <Heart className="w-4 h-4 fill-[#C69749] text-[#C69749]" />
+                              <Heart className="w-4 h-4 fill-accent text-accent" />
                             </button>
                             <button
                               type="button"
                               onClick={() => audioManager.playSurah(s.number)}
                               aria-label="Play"
-                              className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl bg-[#EDF3F0] dark:bg-[#1B2B25] text-[#0F5C4D] dark:text-[#4ECBA9]"
+                              className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-2xl bg-brand-600/14 dark:bg-white/10 text-brand-700 dark:text-accent"
                             >
                               <Play className="w-4 h-4 fill-current" />
                             </button>
@@ -500,7 +513,7 @@ export const LibraryScreen: React.FC = () => {
 
               {favoriteReciterIds.length > 0 && (
                 <section>
-                  <h2 className="text-sm font-bold text-[#0F5C4D] dark:text-[#4ECBA9] mb-2.5">
+                  <h2 className="text-sm font-bold text-brand-700 dark:text-accent mb-2.5">
                     {t.library.favReciters}
                   </h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
@@ -510,13 +523,13 @@ export const LibraryScreen: React.FC = () => {
                       return (
                         <div
                           key={r.id}
-                          className="rounded-2xl bg-white dark:bg-[#131F1C] border border-black/8 dark:border-white/10 p-3.5 flex items-center justify-between gap-2"
+                          className="rounded-3xl glass p-4 flex items-center justify-between gap-2"
                         >
                           <div className="min-w-0">
                             <p className="text-sm font-semibold truncate">
                               {lang === 'ar' ? r.nameAr : r.nameEn}
                             </p>
-                            <p className="text-xs text-[#546660] dark:text-[#96ABA3] truncate">
+                            <p className="text-xs text-muted dark:text-muted-dark truncate">
                               {lang === 'ar' ? r.styleAr : r.styleEn}
                             </p>
                           </div>
@@ -525,15 +538,15 @@ export const LibraryScreen: React.FC = () => {
                               type="button"
                               onClick={() => toggleFavoriteReciter(r.id)}
                               aria-label="Remove favorite reciter"
-                              className="min-h-[40px] min-w-[40px] flex items-center justify-center"
+                              className="min-h-[44px] min-w-[44px] flex items-center justify-center"
                             >
-                              <Heart className="w-4 h-4 fill-[#C69749] text-[#C69749]" />
+                              <Heart className="w-4 h-4 fill-accent text-accent" />
                             </button>
                             <button
                               type="button"
                               onClick={() => audioManager.playSurah(1, r.id)}
                               aria-label="Play reciter"
-                              className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl bg-[#EDF3F0] dark:bg-[#1B2B25] text-[#0F5C4D] dark:text-[#4ECBA9]"
+                              className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-2xl bg-brand-600/14 dark:bg-white/10 text-brand-700 dark:text-accent"
                             >
                               <Play className="w-4 h-4 fill-current" />
                             </button>
@@ -547,17 +560,14 @@ export const LibraryScreen: React.FC = () => {
 
               {favoriteAyahs.length > 0 && (
                 <section>
-                  <h2 className="text-sm font-bold text-[#0F5C4D] dark:text-[#4ECBA9] mb-2.5">
+                  <h2 className="text-sm font-bold text-brand-700 dark:text-accent mb-2.5">
                     {t.library.favAyahs}
                   </h2>
                   <div className="space-y-2.5">
                     {favoriteAyahs.map((ayah) => (
-                      <div
-                        key={ayah.id}
-                        className="rounded-2xl bg-white dark:bg-[#131F1C] border border-black/8 dark:border-white/10 p-4"
-                      >
+                      <div key={ayah.id} className="rounded-3xl glass p-4">
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs font-semibold text-[#0F5C4D] dark:text-[#4ECBA9]">
+                          <span className="text-xs font-semibold text-brand-700 dark:text-accent">
                             {ayah.surahNameEn} · {ayah.id}
                           </span>
                           <div className="flex items-center gap-1">
@@ -565,15 +575,15 @@ export const LibraryScreen: React.FC = () => {
                               type="button"
                               onClick={() => toggleFavoriteAyah(ayah)}
                               aria-label="Remove favorite ayah"
-                              className="min-h-[36px] min-w-[36px] flex items-center justify-center"
+                              className="min-h-[40px] min-w-[40px] flex items-center justify-center"
                             >
-                              <Heart className="w-4 h-4 fill-[#C69749] text-[#C69749]" />
+                              <Heart className="w-4 h-4 fill-accent text-accent" />
                             </button>
                             <button
                               type="button"
                               onClick={() => audioManager.playAyah(ayah.surahNumber, ayah.ayahNumber)}
                               aria-label="Play ayah"
-                              className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-xl bg-[#EDF3F0] dark:bg-[#1B2B25] text-[#0F5C4D] dark:text-[#4ECBA9]"
+                              className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl bg-brand-600/14 dark:bg-white/10 text-brand-700 dark:text-accent"
                             >
                               <Play className="w-4 h-4 fill-current" />
                             </button>
@@ -583,7 +593,7 @@ export const LibraryScreen: React.FC = () => {
                           {ayah.arabicText}
                         </p>
                         {ayah.translationText && (
-                          <p className="mt-2 text-xs text-[#546660] dark:text-[#96ABA3]">
+                          <p className="mt-2 text-xs text-muted dark:text-muted-dark">
                             {ayah.translationText}
                           </p>
                         )}
@@ -601,30 +611,34 @@ export const LibraryScreen: React.FC = () => {
       {subTab === 'downloads' && (
         <div className="space-y-5">
           {/* Storage Used Card */}
-          <div className="rounded-3xl bg-white dark:bg-[#131F1C] border border-black/8 dark:border-white/10 p-5 flex items-center justify-between gap-4">
+          <div className="rounded-3xl glass-strong p-5 flex items-center justify-between gap-4">
             <div>
-              <p className="text-xs text-[#546660] dark:text-[#96ABA3]">{t.library.storageUsed}</p>
-              <p className="text-2xl font-bold text-[#13201C] dark:text-[#ECF2EF] tabular-nums mt-0.5">
+              <p className="text-xs text-muted dark:text-muted-dark">{t.library.storageUsed}</p>
+              <p className="text-2xl font-bold text-ink dark:text-ink-dark tabular-nums mt-0.5">
                 {formatBytes(totalBytes)}
               </p>
             </div>
-            <div className="text-xs text-[#546660] dark:text-[#96ABA3] tabular-nums">
+            <div className="text-xs font-medium text-muted dark:text-muted-dark tabular-nums">
               {downloads.length} {lang === 'ar' ? 'ملفات' : 'surahs saved'}
             </div>
           </div>
 
           {/* Quick Download Form */}
-          <div className="rounded-3xl bg-white dark:bg-[#131F1C] border border-black/8 dark:border-white/10 p-4 space-y-3">
-            <h3 className="text-sm font-semibold">{t.library.downloadSurah}</h3>
+          <div className="rounded-3xl glass p-4 space-y-3">
+            <h3 className="text-sm font-bold">{t.library.downloadSurah}</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <select
                 value={dlSurahNum}
                 onChange={(e) => setDlSurahNum(Number(e.target.value))}
                 aria-label="Surah to download"
-                className="min-h-[44px] rounded-xl bg-[#F3F6F4] dark:bg-[#192823] px-3 text-xs font-medium"
+                className="min-h-[48px] rounded-2xl glass px-3 text-xs font-medium"
               >
                 {surahs.map((s) => (
-                  <option key={s.number} value={s.number}>
+                  <option
+                    key={s.number}
+                    value={s.number}
+                    className="bg-surface-light dark:bg-surface-dark"
+                  >
                     {s.number}. {s.englishName} ({s.name})
                   </option>
                 ))}
@@ -634,10 +648,10 @@ export const LibraryScreen: React.FC = () => {
                 value={dlReciterId}
                 onChange={(e) => setDlReciterId(e.target.value)}
                 aria-label="Reciter to download"
-                className="min-h-[44px] rounded-xl bg-[#F3F6F4] dark:bg-[#192823] px-3 text-xs font-medium"
+                className="min-h-[48px] rounded-2xl glass px-3 text-xs font-medium"
               >
                 {reciters.map((r) => (
-                  <option key={r.id} value={r.id}>
+                  <option key={r.id} value={r.id} className="bg-surface-light dark:bg-surface-dark">
                     {lang === 'ar' ? r.nameAr : r.nameEn}
                   </option>
                 ))}
@@ -646,7 +660,7 @@ export const LibraryScreen: React.FC = () => {
             <button
               type="button"
               onClick={handleStartDownload}
-              className="md-ripple w-full min-h-[44px] rounded-2xl bg-[#0F5C4D] text-white dark:bg-[#4ECBA9] dark:text-[#081A15] text-xs font-semibold flex items-center justify-center gap-2"
+              className="md-ripple w-full min-h-[48px] rounded-2xl bg-brand-600 text-white dark:bg-accent dark:text-brand-950 text-xs font-semibold flex items-center justify-center gap-2 shadow-sm"
             >
               <Download className="w-4 h-4" />
               <span>
@@ -659,25 +673,25 @@ export const LibraryScreen: React.FC = () => {
 
           {/* Downloaded Files List */}
           {downloads.length === 0 ? (
-            <div className="rounded-3xl bg-white dark:bg-[#131F1C] border border-black/8 dark:border-white/10 p-8 text-center">
-              <p className="text-sm text-[#546660] dark:text-[#96ABA3]">{t.library.emptyDownloads}</p>
+            <div className="rounded-3xl glass p-8 text-center">
+              <p className="text-sm text-muted dark:text-muted-dark">{t.library.emptyDownloads}</p>
             </div>
           ) : (
             <div className="space-y-2.5">
               {downloads.map((dl) => (
                 <div
                   key={dl.key}
-                  className="rounded-2xl bg-white dark:bg-[#131F1C] border border-black/8 dark:border-white/10 p-3.5 flex items-center justify-between gap-3"
+                  className="rounded-3xl glass p-4 flex items-center justify-between gap-3"
                 >
                   <button
                     type="button"
                     onClick={() => audioManager.playSurah(dl.surahNumber, dl.reciterId, 0)}
-                    className="text-start flex-1 min-w-0 min-h-[44px]"
+                    className="text-start flex-1 min-w-0 min-h-[48px]"
                   >
                     <p className="text-sm font-semibold truncate">
                       {dl.surahNumber}. {dl.surahNameEn} · {dl.surahNameAr}
                     </p>
-                    <p className="text-xs text-[#546660] dark:text-[#96ABA3] truncate tabular-nums">
+                    <p className="text-xs text-muted dark:text-muted-dark truncate tabular-nums">
                       {lang === 'ar' ? dl.reciterNameAr : dl.reciterNameEn} · {formatBytes(dl.sizeBytes)}
                     </p>
                   </button>
@@ -687,7 +701,7 @@ export const LibraryScreen: React.FC = () => {
                       type="button"
                       onClick={() => audioManager.playSurah(dl.surahNumber, dl.reciterId, 0)}
                       aria-label="Play offline"
-                      className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl bg-[#EDF3F0] dark:bg-[#1B2B25] text-[#0F5C4D] dark:text-[#4ECBA9]"
+                      className="min-h-[48px] min-w-[48px] flex items-center justify-center rounded-2xl bg-brand-600/14 dark:bg-white/10 text-brand-700 dark:text-accent"
                     >
                       <Play className="w-4 h-4 fill-current" />
                     </button>
@@ -698,7 +712,7 @@ export const LibraryScreen: React.FC = () => {
                         await refreshDownloads();
                       }}
                       aria-label="Delete download"
-                      className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl text-rose-600 hover:bg-rose-500/10"
+                      className="min-h-[48px] min-w-[48px] flex items-center justify-center rounded-2xl text-rose-500 hover:bg-rose-500/10"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>

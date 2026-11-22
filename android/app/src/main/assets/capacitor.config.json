@@ -1,0 +1,24 @@
+{
+	"appId": "com.quranfy.app",
+	"appName": "Quranfy",
+	"webDir": "dist",
+	"server": {
+		"androidScheme": "https"
+	},
+	"android": {
+		"allowMixedContent": false,
+		"captureInput": true,
+		"webContentsDebuggingEnabled": false
+	},
+	"plugins": {
+		"LocalNotifications": {
+			"smallIcon": "ic_stat_quranfy",
+			"iconColor": "#4F46C8"
+		},
+		"StatusBar": {
+			"overlaysWebView": false,
+			"style": "DARK",
+			"backgroundColor": "#0E0B1F"
+		}
+	}
+}

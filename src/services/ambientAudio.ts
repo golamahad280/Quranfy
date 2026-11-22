@@ -1,12 +1,86 @@
-import {AmbientSoundType} from '../types/quran';
+import {AmbientMixState, AmbientPresetId, AmbientSoundType} from '../types/quran';
+
+export const AMBIENT_SOUNDS: AmbientSoundType[] = [
+  'soft-rain',
+  'heavy-rain',
+  'forest-birds',
+  'ocean-waves',
+  'gentle-stream',
+  'night-crickets',
+  'soft-wind',
+  'fireplace',
+  'brown-noise',
+];
+
+export const DEFAULT_CHANNEL_VOLUMES: Record<AmbientSoundType, number> = {
+  'soft-rain': 0.55,
+  'heavy-rain': 0.5,
+  'forest-birds': 0.5,
+  'ocean-waves': 0.52,
+  'gentle-stream': 0.55,
+  'night-crickets': 0.48,
+  'soft-wind': 0.45,
+  fireplace: 0.58,
+  'brown-noise': 0.42,
+};
+
+export const AMBIENT_PRESETS: Record<
+  AmbientPresetId,
+  Array<{id: AmbientSoundType; volume: number}>
+> = {
+  'deep-sleep': [
+    {id: 'soft-rain', volume: 0.62},
+    {id: 'soft-wind', volume: 0.36},
+  ],
+  focus: [
+    {id: 'gentle-stream', volume: 0.58},
+    {id: 'forest-birds', volume: 0.44},
+  ],
+  'calm-night': [
+    {id: 'night-crickets', volume: 0.55},
+    {id: 'soft-wind', volume: 0.38},
+  ],
+  cozy: [
+    {id: 'fireplace', volume: 0.64},
+    {id: 'soft-rain', volume: 0.46},
+  ],
+};
+
+interface ActiveChannelNodes {
+  source: AudioBufferSourceNode;
+  gain: GainNode;
+}
 
 class AmbientSoundEngine {
   private ctx: AudioContext | null = null;
+  private softeningFilter: BiquadFilterNode | null = null;
   private masterGain: GainNode | null = null;
-  private activeNodes: AudioNode[] = [];
-  private activeOscillators: OscillatorNode[] = [];
-  private currentSound: AmbientSoundType | null = null;
-  private volume = 0.35;
+  private bufferCache = new Map<AmbientSoundType, AudioBuffer>();
+  private pendingFetches = new Map<AmbientSoundType, Promise<AudioBuffer>>();
+  private activeChannels = new Map<AmbientSoundType, ActiveChannelNodes>();
+  private loadingSounds = new Set<AmbientSoundType>();
+  private listeners = new Set<() => void>();
+  private syncToken = 0;
+  private isFadingOutAll = false;
+  private recitationActive = false;
+  private currentMasterVolume = 0.65;
+
+  private notifyListeners(): void {
+    for (const cb of this.listeners) {
+      cb();
+    }
+  }
+
+  public subscribeLoading(cb: () => void): () => void {
+    this.listeners.add(cb);
+    return () => {
+      this.listeners.delete(cb);
+    };
+  }
+
+  public getLoadingSounds(): AmbientSoundType[] {
+    return Array.from(this.loadingSounds);
+  }
 
   private ensureContext(): AudioContext {
     if (!this.ctx) {
@@ -14,257 +88,288 @@ class AmbientSoundEngine {
         window.AudioContext ||
         (window as unknown as {webkitAudioContext: typeof AudioContext}).webkitAudioContext;
       this.ctx = new AudioCtx();
+
+      // Voice protection: gentle low-pass softening filter + capped master ducking gain
+      this.softeningFilter = this.ctx.createBiquadFilter();
+      this.softeningFilter.type = 'lowpass';
+      this.softeningFilter.frequency.value = 2600;
+      this.softeningFilter.Q.value = 0.5;
+
       this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.value = this.volume;
+      this.masterGain.gain.value = this.computeEffectiveMasterGain(this.currentMasterVolume);
+
+      this.softeningFilter.connect(this.masterGain);
       this.masterGain.connect(this.ctx.destination);
     }
+
     if (this.ctx.state === 'suspended') {
       this.ctx.resume().catch(() => {});
     }
     return this.ctx;
   }
 
-  private createNoiseBuffer(ctx: AudioContext, type: 'white' | 'pink' | 'brown'): AudioBuffer {
-    const bufferSize = ctx.sampleRate * 4;
-    const buffer = ctx.createBuffer(2, bufferSize, ctx.sampleRate);
-
-    for (let channel = 0; channel < 2; channel++) {
-      const output = buffer.getChannelData(channel);
-      if (type === 'white') {
-        for (let i = 0; i < bufferSize; i++) {
-          output[i] = (Math.random() * 2 - 1) * 0.35;
-        }
-      } else if (type === 'pink') {
-        let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
-        for (let i = 0; i < bufferSize; i++) {
-          const white = Math.random() * 2 - 1;
-          b0 = 0.99886 * b0 + white * 0.0555179;
-          b1 = 0.99332 * b1 + white * 0.0750759;
-          b2 = 0.96900 * b2 + white * 0.1538520;
-          b3 = 0.86650 * b3 + white * 0.3104856;
-          b4 = 0.55000 * b4 + white * 0.5329522;
-          b5 = -0.7616 * b5 - white * 0.0168980;
-          output[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.07;
-          b6 = white * 0.115926;
-        }
-      } else {
-        // Brown noise
-        let lastOut = 0;
-        for (let i = 0; i < bufferSize; i++) {
-          const white = Math.random() * 2 - 1;
-          output[i] = (lastOut + 0.02 * white) / 1.02;
-          lastOut = output[i];
-          output[i] *= 1.8;
-        }
-      }
-    }
-    return buffer;
+  // Cap ambient strictly below Quran recitation voice; duck gently further when speech is playing
+  private computeEffectiveMasterGain(masterVolume: number): number {
+    const clamped = Math.max(0, Math.min(1, masterVolume));
+    const speechCeiling = this.recitationActive ? 0.36 : 0.48;
+    return clamped * speechCeiling;
   }
 
-  public start(sound: AmbientSoundType, volume: number): void {
-    this.volume = volume;
-    if (this.currentSound === sound && this.activeNodes.length > 0) {
-      this.setVolume(volume);
+  public setRecitationActive(active: boolean): void {
+    this.recitationActive = active;
+    if (!this.ctx || !this.masterGain || this.isFadingOutAll) return;
+    const now = this.ctx.currentTime;
+    this.masterGain.gain.cancelScheduledValues(now);
+    this.masterGain.gain.setTargetAtTime(
+      Math.max(0.0001, this.computeEffectiveMasterGain(this.currentMasterVolume)),
+      now,
+      0.25
+    );
+  }
+
+  // Trim MP3 encoder leading/trailing near-silent padding and apply a tiny 15ms seam crossfade
+  private prepareSeamlessBuffer(ctx: AudioContext, raw: AudioBuffer): AudioBuffer {
+    const threshold = 0.0008;
+    const channels = raw.numberOfChannels;
+    const len = raw.length;
+    let startIdx = 0;
+    let endIdx = len - 1;
+
+    const ch0 = raw.getChannelData(0);
+    while (startIdx < len - 1 && Math.abs(ch0[startIdx]) < threshold) {
+      startIdx++;
+    }
+    while (endIdx > startIdx + 2048 && Math.abs(ch0[endIdx]) < threshold) {
+      endIdx--;
+    }
+
+    // Add tiny safety margin inside non-silent region if trimmed
+    const trimmedLen = Math.max(2048, endIdx - startIdx + 1);
+    const out = ctx.createBuffer(channels, trimmedLen, raw.sampleRate);
+    const seamSamples = Math.min(Math.floor(raw.sampleRate * 0.018), Math.floor(trimmedLen / 8));
+
+    for (let c = 0; c < channels; c++) {
+      const src = raw.getChannelData(c);
+      const dst = out.getChannelData(c);
+      for (let i = 0; i < trimmedLen; i++) {
+        dst[i] = src[startIdx + i];
+      }
+      // Smooth 18ms loop boundary blend
+      for (let i = 0; i < seamSamples; i++) {
+        const t = i / seamSamples;
+        const head = dst[i];
+        const tail = dst[trimmedLen - seamSamples + i];
+        dst[trimmedLen - seamSamples + i] = tail * (1 - t) + head * t;
+      }
+    }
+    return out;
+  }
+
+  private async loadBuffer(id: AmbientSoundType): Promise<AudioBuffer> {
+    const cached = this.bufferCache.get(id);
+    if (cached) return cached;
+
+    const existing = this.pendingFetches.get(id);
+    if (existing) return existing;
+
+    const ctx = this.ensureContext();
+    this.loadingSounds.add(id);
+    this.notifyListeners();
+
+    const promise = (async () => {
+      try {
+        const res = await fetch(`./sounds/${id}.mp3`);
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const arr = await res.arrayBuffer();
+        const decoded = await ctx.decodeAudioData(arr);
+        const seamless = this.prepareSeamlessBuffer(ctx, decoded);
+        this.bufferCache.set(id, seamless);
+        return seamless;
+      } finally {
+        this.loadingSounds.delete(id);
+        this.pendingFetches.delete(id);
+        this.notifyListeners();
+      }
+    })();
+
+    this.pendingFetches.set(id, promise);
+    return promise;
+  }
+
+  public async syncMix(mix: AmbientMixState): Promise<void> {
+    const token = ++this.syncToken;
+    this.isFadingOutAll = false;
+    this.currentMasterVolume = mix.masterVolume;
+
+    const enabledIds = AMBIENT_SOUNDS.filter((id) => mix.channels[id]?.enabled);
+
+    // Stop any channels that were turned off
+    for (const [id, nodes] of this.activeChannels.entries()) {
+      if (!mix.channels[id]?.enabled) {
+        this.stopChannelSmooth(id, nodes);
+      }
+    }
+
+    if (enabledIds.length === 0) {
       return;
     }
 
-    this.stopImmediate();
     const ctx = this.ensureContext();
-    if (!this.masterGain) return;
+    if (this.masterGain) {
+      const now = ctx.currentTime;
+      this.masterGain.gain.cancelScheduledValues(now);
+      this.masterGain.gain.setTargetAtTime(
+        Math.max(0.0001, this.computeEffectiveMasterGain(mix.masterVolume)),
+        now,
+        0.12
+      );
+    }
 
-    this.currentSound = sound;
-    const now = ctx.currentTime;
-    this.masterGain.gain.cancelScheduledValues(now);
-    this.masterGain.gain.setValueAtTime(0.001, now);
-    this.masterGain.gain.linearRampToValueAtTime(Math.max(0.001, volume), now + 0.6);
+    // Update volumes for already running channels, lazy-load & fade in newly enabled ones
+    await Promise.all(
+      enabledIds.map(async (id) => {
+        const targetVol = Math.max(0.01, Math.min(1, mix.channels[id]?.volume ?? 0.5));
+        const running = this.activeChannels.get(id);
+        if (running) {
+          const now = ctx.currentTime;
+          running.gain.gain.cancelScheduledValues(now);
+          running.gain.gain.setTargetAtTime(targetVol, now, 0.08);
+          return;
+        }
 
-    const source = ctx.createBufferSource();
-    source.loop = true;
+        try {
+          const buffer = await this.loadBuffer(id);
+          if (token !== this.syncToken || this.isFadingOutAll) return;
+          if (!this.softeningFilter) return;
 
-    if (sound === 'rain') {
-      source.buffer = this.createNoiseBuffer(ctx, 'pink');
-      const lp = ctx.createBiquadFilter();
-      lp.type = 'lowpass';
-      lp.frequency.value = 1800;
+          // Double-check channel didn't get disabled while fetching
+          if (this.activeChannels.has(id)) return;
 
-      const hp = ctx.createBiquadFilter();
-      hp.type = 'highpass';
-      hp.frequency.value = 220;
+          const source = ctx.createBufferSource();
+          source.buffer = buffer;
+          source.loop = true;
 
-      source.connect(hp);
-      hp.connect(lp);
-      lp.connect(this.masterGain);
-      source.start();
-      this.activeNodes.push(source, hp, lp);
-    } else if (sound === 'ocean') {
-      source.buffer = this.createNoiseBuffer(ctx, 'brown');
-      const lp = ctx.createBiquadFilter();
-      lp.type = 'lowpass';
-      lp.frequency.value = 520;
+          const gain = ctx.createGain();
+          const now = ctx.currentTime;
+          gain.gain.setValueAtTime(0.0001, now);
+          // 1.5s gentle fade-in
+          gain.gain.linearRampToValueAtTime(targetVol, now + 1.5);
 
-      const waveGain = ctx.createGain();
-      waveGain.gain.value = 0.65;
+          source.connect(gain);
+          gain.connect(this.softeningFilter);
+          source.start();
 
-      const lfo = ctx.createOscillator();
-      lfo.type = 'sine';
-      lfo.frequency.value = 0.11; // ~9s ocean wave cycle
+          this.activeChannels.set(id, {source, gain});
+        } catch {
+          // Ignore individual load errors (UI already surfaces loading state cleanly)
+        }
+      })
+    );
+  }
 
-      const lfoDepth = ctx.createGain();
-      lfoDepth.gain.value = 0.35;
+  private stopChannelSmooth(id: AmbientSoundType, nodes: ActiveChannelNodes): void {
+    this.activeChannels.delete(id);
+    if (!this.ctx) {
+      try {
+        nodes.source.stop();
+        nodes.source.disconnect();
+        nodes.gain.disconnect();
+      } catch {
+        // Ignore
+      }
+      return;
+    }
 
-      const freqDepth = ctx.createGain();
-      freqDepth.gain.value = 260;
-
-      lfo.connect(lfoDepth);
-      lfoDepth.connect(waveGain.gain);
-      lfo.connect(freqDepth);
-      freqDepth.connect(lp.frequency);
-
-      source.connect(lp);
-      lp.connect(waveGain);
-      waveGain.connect(this.masterGain);
-      source.start();
-      lfo.start();
-      this.activeNodes.push(source, lp, waveGain, lfoDepth, freqDepth);
-      this.activeOscillators.push(lfo);
-    } else if (sound === 'wind') {
-      source.buffer = this.createNoiseBuffer(ctx, 'pink');
-      const bp = ctx.createBiquadFilter();
-      bp.type = 'bandpass';
-      bp.frequency.value = 420;
-      bp.Q.value = 1.4;
-
-      const lfo = ctx.createOscillator();
-      lfo.type = 'sine';
-      lfo.frequency.value = 0.08;
-
-      const lfoGain = ctx.createGain();
-      lfoGain.gain.value = 190;
-      lfo.connect(lfoGain);
-      lfoGain.connect(bp.frequency);
-
-      source.connect(bp);
-      bp.connect(this.masterGain);
-      source.start();
-      lfo.start();
-      this.activeNodes.push(source, bp, lfoGain);
-      this.activeOscillators.push(lfo);
-    } else if (sound === 'forest') {
-      source.buffer = this.createNoiseBuffer(ctx, 'pink');
-      const bp = ctx.createBiquadFilter();
-      bp.type = 'bandpass';
-      bp.frequency.value = 950;
-      bp.Q.value = 0.7;
-
-      const rustleGain = ctx.createGain();
-      rustleGain.gain.value = 0.5;
-
-      const lfo = ctx.createOscillator();
-      lfo.type = 'triangle';
-      lfo.frequency.value = 0.17;
-      const lfoDepth = ctx.createGain();
-      lfoDepth.gain.value = 0.25;
-      lfo.connect(lfoDepth);
-      lfoDepth.connect(rustleGain.gain);
-
-      source.connect(bp);
-      bp.connect(rustleGain);
-      rustleGain.connect(this.masterGain);
-      source.start();
-      lfo.start();
-      this.activeNodes.push(source, bp, rustleGain, lfoDepth);
-      this.activeOscillators.push(lfo);
-    } else if (sound === 'night') {
-      source.buffer = this.createNoiseBuffer(ctx, 'brown');
-      const lp = ctx.createBiquadFilter();
-      lp.type = 'lowpass';
-      lp.frequency.value = 280;
-
-      // Subtle warm nocturnal shimmer
-      const shimmer = ctx.createOscillator();
-      shimmer.type = 'sine';
-      shimmer.frequency.value = 196;
-      const shimmerGain = ctx.createGain();
-      shimmerGain.gain.value = 0.015;
-
-      source.connect(lp);
-      lp.connect(this.masterGain);
-      shimmer.connect(shimmerGain);
-      shimmerGain.connect(this.masterGain);
-
-      source.start();
-      shimmer.start();
-      this.activeNodes.push(source, lp, shimmerGain);
-      this.activeOscillators.push(shimmer);
-    } else {
-      // Softened white noise
-      source.buffer = this.createNoiseBuffer(ctx, 'white');
-      const lp = ctx.createBiquadFilter();
-      lp.type = 'lowpass';
-      lp.frequency.value = 3400;
-
-      source.connect(lp);
-      lp.connect(this.masterGain);
-      source.start();
-      this.activeNodes.push(source, lp);
+    const now = this.ctx.currentTime;
+    try {
+      nodes.gain.gain.cancelScheduledValues(now);
+      nodes.gain.gain.setValueAtTime(nodes.gain.gain.value, now);
+      nodes.gain.gain.linearRampToValueAtTime(0.0001, now + 0.35);
+      window.setTimeout(() => {
+        try {
+          nodes.source.stop();
+          nodes.source.disconnect();
+          nodes.gain.disconnect();
+        } catch {
+          // Ignore
+        }
+      }, 380);
+    } catch {
+      // Ignore
     }
   }
 
-  public setVolume(volume: number): void {
-    this.volume = volume;
-    if (this.ctx && this.masterGain) {
-      const now = this.ctx.currentTime;
-      this.masterGain.gain.cancelScheduledValues(now);
-      this.masterGain.gain.setTargetAtTime(Math.max(0.0001, volume), now, 0.08);
-    }
+  public setMasterVolume(volume: number): void {
+    this.currentMasterVolume = volume;
+    if (!this.ctx || !this.masterGain || this.isFadingOutAll) return;
+    const now = this.ctx.currentTime;
+    this.masterGain.gain.cancelScheduledValues(now);
+    this.masterGain.gain.setTargetAtTime(
+      Math.max(0.0001, this.computeEffectiveMasterGain(volume)),
+      now,
+      0.08
+    );
+  }
+
+  public setChannelVolume(id: AmbientSoundType, volume: number): void {
+    const running = this.activeChannels.get(id);
+    if (!running || !this.ctx || this.isFadingOutAll) return;
+    const now = this.ctx.currentTime;
+    running.gain.gain.cancelScheduledValues(now);
+    running.gain.gain.setTargetAtTime(Math.max(0.0001, volume), now, 0.08);
   }
 
   public fadeOutAndStop(durationSeconds = 4): void {
-    if (!this.ctx || !this.masterGain || !this.currentSound) return;
+    if (!this.ctx || !this.masterGain || this.activeChannels.size === 0) return;
+    this.isFadingOutAll = true;
     const now = this.ctx.currentTime;
     this.masterGain.gain.cancelScheduledValues(now);
     this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, now);
     this.masterGain.gain.linearRampToValueAtTime(0.0001, now + durationSeconds);
-    setTimeout(() => {
+
+    window.setTimeout(() => {
       this.stopImmediate();
     }, durationSeconds * 1000 + 80);
   }
 
   public stop(): void {
-    if (!this.ctx || !this.masterGain || !this.currentSound) {
+    if (!this.ctx || !this.masterGain || this.activeChannels.size === 0) {
       this.stopImmediate();
       return;
     }
+    this.isFadingOutAll = true;
     const now = this.ctx.currentTime;
     this.masterGain.gain.cancelScheduledValues(now);
-    this.masterGain.gain.linearRampToValueAtTime(0.0001, now + 0.25);
-    setTimeout(() => {
+    this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, now);
+    this.masterGain.gain.linearRampToValueAtTime(0.0001, now + 0.35);
+    window.setTimeout(() => {
       this.stopImmediate();
-    }, 280);
+    }, 380);
   }
 
   private stopImmediate(): void {
-    for (const node of this.activeNodes) {
+    this.syncToken++;
+    for (const nodes of this.activeChannels.values()) {
       try {
-        if ('stop' in node && typeof (node as AudioBufferSourceNode).stop === 'function') {
-          (node as AudioBufferSourceNode).stop();
-        }
-        node.disconnect();
+        nodes.source.stop();
+        nodes.source.disconnect();
+        nodes.gain.disconnect();
       } catch {
         // Ignore
       }
     }
-    for (const osc of this.activeOscillators) {
-      try {
-        osc.stop();
-        osc.disconnect();
-      } catch {
-        // Ignore
-      }
+    this.activeChannels.clear();
+    this.isFadingOutAll = false;
+    if (this.ctx && this.masterGain) {
+      const now = this.ctx.currentTime;
+      this.masterGain.gain.cancelScheduledValues(now);
+      this.masterGain.gain.setValueAtTime(
+        this.computeEffectiveMasterGain(this.currentMasterVolume),
+        now
+      );
     }
-    this.activeNodes = [];
-    this.activeOscillators = [];
-    this.currentSound = null;
   }
 }
 

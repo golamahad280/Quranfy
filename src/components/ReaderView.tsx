@@ -1,5 +1,6 @@
 import {
   ArrowLeft,
+  BookText,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -15,18 +16,24 @@ import {
   Volume2,
 } from 'lucide-react';
 import React, {useEffect, useRef, useState} from 'react';
-import {TRANSLATIONS} from '../data/i18n';
+import {pickLang, TRANSLATIONS} from '../data/i18n';
 import {TRANSLATION_OPTIONS} from '../data/recitersAndPlaylists';
 import {audioManager} from '../services/audioManager';
 import {listAudioDownloads} from '../services/db';
-import {downloadSurahForOffline, fetchSurahWithTranslation} from '../services/quranApi';
+import {
+  downloadSurahForOffline,
+  fetchBanglaSurah,
+  fetchSurahWithTranslation,
+} from '../services/quranApi';
 import {useQuranStore} from '../store/useQuranStore';
 import {SurahDetail} from '../types/quran';
+import {TafsirSheet} from './TafsirSheet';
 
 export const ReaderView: React.FC = () => {
   const readerSurahNumber = useQuranStore((s) => s.readerSurahNumber);
   const closeReader = useQuranStore((s) => s.closeReader);
   const openReader = useQuranStore((s) => s.openReader);
+  const openTafsirSheet = useQuranStore((s) => s.openTafsirSheet);
   const surahs = useQuranStore((s) => s.surahs);
   const reciters = useQuranStore((s) => s.reciters);
   const currentSurahNumber = useQuranStore((s) => s.currentSurahNumber);
@@ -57,10 +64,13 @@ export const ReaderView: React.FC = () => {
   const showToast = useQuranStore((s) => s.showToast);
 
   const [detail, setDetail] = useState<SurahDetail | null>(null);
+  const [banglaVerses, setBanglaVerses] = useState<Record<number, string> | null>(null);
+  const [banglaLoading, setBanglaLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showDisplayPanel, setShowDisplayPanel] = useState(false);
   const [showAyahControls, setShowAyahControls] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
   const ayahRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
@@ -83,9 +93,12 @@ export const ReaderView: React.FC = () => {
       .catch(() => {
         if (active) {
           setError(
-            lang === 'ar'
-              ? 'تعذر تحميل نص السورة. تأكد من اتصالك بالإنترنت للمرة الأولى.'
-              : 'Unable to load surah text. Connect once to cache this surah offline.'
+            pickLang(
+              lang,
+              'Unable to load surah text. Connect once to cache this surah offline.',
+              'تعذر تحميل نص السورة. تأكد من اتصالك بالإنترنت للمرة الأولى.',
+              'সূরার পাঠ লোড করা যায়নি। অফলাইনে সংরক্ষণের জন্য একবার ইন্টারনেটে সংযুক্ত হন।'
+            )
           );
           setLoading(false);
         }
@@ -94,7 +107,40 @@ export const ReaderView: React.FC = () => {
     return () => {
       active = false;
     };
-  }, [readerSurahNumber, settings.translationEdition, lang]);
+  }, [readerSurahNumber, settings.translationEdition, lang, retryCount]);
+
+  // Fetch Bangla Quran translation (ben-muhiuddinkhan) whenever enabled
+  useEffect(() => {
+    if (!readerSurahNumber || !settings.showBanglaTranslation) {
+      return;
+    }
+    let active = true;
+    setBanglaLoading(true);
+    fetchBanglaSurah(readerSurahNumber)
+      .then((verses) => {
+        if (active) {
+          setBanglaVerses(verses);
+          setBanglaLoading(false);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setBanglaVerses(null);
+          setBanglaLoading(false);
+          showToast(
+            pickLang(
+              lang,
+              'Could not load Bangla Quran translation. Check connection.',
+              'تعذر تحميل الترجمة البنغالية للقرآن.',
+              'বাংলা কুরআন অনুবাদ লোড করা যায়নি।'
+            )
+          );
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [readerSurahNumber, settings.showBanglaTranslation, lang, showToast]);
 
   // Smoothly auto-scroll to the active playing ayah
   useEffect(() => {
@@ -131,10 +177,21 @@ export const ReaderView: React.FC = () => {
       const list = await listAudioDownloads();
       setDownloadedKeys(list.map((d) => d.key));
       setDownloadProgress(dlKey, null);
-      showToast(lang === 'ar' ? 'تم حفظ السورة للاستماع دون إنترنت' : 'Surah saved offline');
-    } catch {
+      showToast(
+        pickLang(
+          lang,
+          'Surah saved offline',
+          'تم حفظ السورة للاستماع دون إنترنت',
+          'অফলাইনে শোনার জন্য সূরাটি সংরক্ষিত হয়েছে'
+        )
+      );
+    } catch (err) {
       setDownloadProgress(dlKey, null);
-      showToast(lang === 'ar' ? 'تعذر التحميل' : 'Download failed');
+      const msg =
+        err instanceof Error && err.message
+          ? err.message
+          : pickLang(lang, 'Download failed', 'تعذر التحميل', 'ডাউনলোড ব্যর্থ হয়েছে');
+      showToast(msg);
     }
   };
 
@@ -142,23 +199,23 @@ export const ReaderView: React.FC = () => {
     settings.arabicFont === 'scheherazade' ? 'font-quran-scheherazade' : 'font-quran-amiri';
 
   return (
-    <div className="fixed inset-0 z-40 flex flex-col bg-[#F6F8F7] dark:bg-[#0B1210] pt-safe">
-      {/* Top Reader App Bar */}
-      <header className="sticky top-0 z-20 flex items-center justify-between gap-2 px-3 py-2 bg-[#F6F8F7]/95 dark:bg-[#0B1210]/95 backdrop-blur-md border-b border-black/8 dark:border-white/10">
+    <div className="fixed inset-0 z-40 flex flex-col bg-surface-light/95 dark:bg-surface-dark/95 backdrop-blur-2xl pt-safe">
+      {/* Top Reader Glass App Bar */}
+      <header className="sticky top-0 z-20 flex items-center justify-between gap-2 px-3 py-2 glass-nav border-b">
         <div className="flex items-center gap-1 min-w-0">
           <button
             type="button"
             onClick={closeReader}
             aria-label="Back"
-            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10"
+            className="min-h-[48px] min-w-[48px] flex items-center justify-center rounded-full hover:bg-brand-500/10 dark:hover:bg-white/10"
           >
             <ArrowLeft className="w-5 h-5 rtl:rotate-180" />
           </button>
           <div className="min-w-0">
-            <h1 className="text-base font-semibold text-[#13201C] dark:text-[#ECF2EF] truncate">
+            <h1 className="text-base font-bold text-ink dark:text-ink-dark truncate">
               {surah.number}. {surah.englishName}
             </h1>
-            <p className="text-xs text-[#546660] dark:text-[#96ABA3] truncate">
+            <p className="text-xs text-muted dark:text-muted-dark truncate">
               {surah.name} · {surah.numberOfAyahs} {t.home.ayahs}
             </p>
           </div>
@@ -169,11 +226,11 @@ export const ReaderView: React.FC = () => {
             type="button"
             onClick={() => toggleFavoriteSurah(surah.number)}
             aria-label="Favorite Surah"
-            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10"
+            className="min-h-[48px] min-w-[44px] flex items-center justify-center rounded-full hover:bg-brand-500/10 dark:hover:bg-white/10"
           >
             <Heart
               className={`w-5 h-5 ${
-                isFavSurah ? 'fill-[#C69749] text-[#C69749]' : 'text-[#546660] dark:text-[#96ABA3]'
+                isFavSurah ? 'fill-accent text-accent' : 'text-muted dark:text-muted-dark'
               }`}
             />
           </button>
@@ -182,7 +239,7 @@ export const ReaderView: React.FC = () => {
             type="button"
             onClick={handleDownload}
             aria-label={t.library.downloadSurah}
-            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-[#0F5C4D] dark:text-[#4ECBA9]"
+            className="min-h-[48px] min-w-[44px] flex items-center justify-center rounded-full hover:bg-brand-500/10 dark:hover:bg-white/10 text-brand-600 dark:text-accent"
           >
             {dlPct !== undefined ? (
               <span className="text-xs font-bold tabular-nums">{dlPct}%</span>
@@ -200,10 +257,10 @@ export const ReaderView: React.FC = () => {
               setShowDisplayPanel(false);
             }}
             aria-label="Ayah Repeat Controls"
-            className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full ${
+            className={`min-h-[48px] min-w-[44px] flex items-center justify-center rounded-full ${
               showAyahControls || ayahRangeEnabled || ayahRepeatTarget > 1
-                ? 'bg-[#0F5C4D]/12 text-[#0F5C4D] dark:bg-[#4ECBA9]/20 dark:text-[#4ECBA9]'
-                : 'hover:bg-black/5 dark:hover:bg-white/10 text-[#546660] dark:text-[#96ABA3]'
+                ? 'bg-brand-600/14 text-brand-700 dark:bg-accent/20 dark:text-accent'
+                : 'hover:bg-brand-500/10 dark:hover:bg-white/10 text-muted dark:text-muted-dark'
             }`}
           >
             <Repeat className="w-5 h-5" />
@@ -215,11 +272,11 @@ export const ReaderView: React.FC = () => {
               setShowDisplayPanel((v) => !v);
               setShowAyahControls(false);
             }}
-            aria-label="Reader Typography"
-            className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full ${
+            aria-label="Reader Typography & Languages"
+            className={`min-h-[48px] min-w-[44px] flex items-center justify-center rounded-full ${
               showDisplayPanel
-                ? 'bg-[#0F5C4D]/12 text-[#0F5C4D] dark:bg-[#4ECBA9]/20 dark:text-[#4ECBA9]'
-                : 'hover:bg-black/5 dark:hover:bg-white/10 text-[#546660] dark:text-[#96ABA3]'
+                ? 'bg-brand-600/14 text-brand-700 dark:bg-accent/20 dark:text-accent'
+                : 'hover:bg-brand-500/10 dark:hover:bg-white/10 text-muted dark:text-muted-dark'
             }`}
           >
             <Type className="w-5 h-5" />
@@ -227,13 +284,13 @@ export const ReaderView: React.FC = () => {
         </div>
       </header>
 
-      {/* Display / Typography Settings Drawer */}
+      {/* Display / Typography & Multi-Script Language Drawer */}
       {showDisplayPanel && (
-        <div className="border-b border-black/8 dark:border-white/10 bg-[#EDF3F0] dark:bg-[#131F1C] px-4 py-4">
+        <div className="border-b border-brand-500/15 dark:border-white/12 glass-strong px-4 py-4">
           <div className="max-w-3xl mx-auto space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex-1 min-w-[200px]">
-                <div className="flex justify-between text-xs font-medium text-[#43544E] dark:text-[#A4B7B0] mb-1.5">
+                <div className="flex justify-between text-xs font-semibold text-muted dark:text-muted-dark mb-1.5">
                   <span>{t.settings.fontSize}</span>
                   <span className="tabular-nums">{settings.arabicFontSize}px</span>
                 </div>
@@ -243,7 +300,7 @@ export const ReaderView: React.FC = () => {
                   max={44}
                   value={settings.arabicFontSize}
                   onChange={(e) => updateSettings({arabicFontSize: Number(e.target.value)})}
-                  className="w-full md-slider bg-black/15 dark:bg-white/15"
+                  className="w-full md-slider bg-brand-900/15 dark:bg-white/20"
                 />
               </div>
 
@@ -251,10 +308,10 @@ export const ReaderView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => updateSettings({arabicFont: 'amiri'})}
-                  className={`px-3 min-h-[40px] rounded-xl text-xs font-medium border ${
+                  className={`px-3.5 min-h-[44px] rounded-2xl text-xs font-semibold border ${
                     settings.arabicFont === 'amiri'
-                      ? 'bg-[#0F5C4D] text-white border-[#0F5C4D] dark:bg-[#4ECBA9] dark:text-[#081A15] dark:border-[#4ECBA9]'
-                      : 'bg-white dark:bg-[#1A2924] border-black/10 dark:border-white/10'
+                      ? 'bg-brand-600 text-white border-brand-600 dark:bg-accent dark:text-brand-950 dark:border-accent'
+                      : 'glass text-ink dark:text-ink-dark'
                   }`}
                 >
                   Amiri Quran
@@ -262,10 +319,10 @@ export const ReaderView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => updateSettings({arabicFont: 'scheherazade'})}
-                  className={`px-3 min-h-[40px] rounded-xl text-xs font-medium border ${
+                  className={`px-3.5 min-h-[44px] rounded-2xl text-xs font-semibold border ${
                     settings.arabicFont === 'scheherazade'
-                      ? 'bg-[#0F5C4D] text-white border-[#0F5C4D] dark:bg-[#4ECBA9] dark:text-[#081A15] dark:border-[#4ECBA9]'
-                      : 'bg-white dark:bg-[#1A2924] border-black/10 dark:border-white/10'
+                      ? 'bg-brand-600 text-white border-brand-600 dark:bg-accent dark:text-brand-950 dark:border-accent'
+                      : 'glass text-ink dark:text-ink-dark'
                   }`}
                 >
                   Scheherazade
@@ -273,25 +330,48 @@ export const ReaderView: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-black/5 dark:border-white/10">
-              <label className="flex items-center gap-2.5 text-sm font-medium cursor-pointer min-h-[40px]">
-                <input
-                  type="checkbox"
-                  checked={settings.showTranslation}
-                  onChange={(e) => updateSettings({showTranslation: e.target.checked})}
-                  className="w-4 h-4 accent-[#0F5C4D] dark:accent-[#4ECBA9]"
-                />
-                <span>{t.settings.showTranslation}</span>
-              </label>
+            {/* Independent Arabic, English, Bangla combination checkboxes */}
+            <div className="pt-2 border-t border-brand-500/10 dark:border-white/10 space-y-2.5">
+              <div className="flex flex-wrap items-center gap-4">
+                <label className="flex items-center gap-2 text-xs sm:text-sm font-medium cursor-pointer min-h-[44px]">
+                  <input
+                    type="checkbox"
+                    checked={settings.showArabic}
+                    onChange={(e) => updateSettings({showArabic: e.target.checked})}
+                    className="w-4 h-4 accent-brand-600 dark:accent-accent"
+                  />
+                  <span>{t.tafsir.showArabic}</span>
+                </label>
+
+                <label className="flex items-center gap-2 text-xs sm:text-sm font-medium cursor-pointer min-h-[44px]">
+                  <input
+                    type="checkbox"
+                    checked={settings.showTranslation}
+                    onChange={(e) => updateSettings({showTranslation: e.target.checked})}
+                    className="w-4 h-4 accent-brand-600 dark:accent-accent"
+                  />
+                  <span>{t.tafsir.showEnglish}</span>
+                </label>
+
+                <label className="flex items-center gap-2 text-xs sm:text-sm font-medium cursor-pointer min-h-[44px] font-bengali">
+                  <input
+                    type="checkbox"
+                    checked={settings.showBanglaTranslation}
+                    onChange={(e) => updateSettings({showBanglaTranslation: e.target.checked})}
+                    className="w-4 h-4 accent-brand-600 dark:accent-accent"
+                  />
+                  <span>{t.tafsir.showBangla}</span>
+                </label>
+              </div>
 
               <select
                 value={settings.translationEdition}
                 onChange={(e) => updateSettings({translationEdition: e.target.value})}
                 aria-label={t.settings.translation}
-                className="min-h-[40px] rounded-xl bg-white dark:bg-[#1A2924] px-3 text-xs font-medium border border-black/10 dark:border-white/10"
+                className="w-full sm:w-auto min-h-[44px] rounded-2xl glass px-3 text-xs font-semibold text-ink dark:text-ink-dark"
               >
                 {TRANSLATION_OPTIONS.map((opt) => (
-                  <option key={opt.edition} value={opt.edition}>
+                  <option key={opt.edition} value={opt.edition} className="bg-surface-light dark:bg-surface-dark">
                     {opt.language} — {opt.name}
                   </option>
                 ))}
@@ -303,10 +383,10 @@ export const ReaderView: React.FC = () => {
 
       {/* Ayah-by-Ayah Repeat & Range Drawer */}
       {showAyahControls && (
-        <div className="border-b border-black/8 dark:border-white/10 bg-[#EDF3F0] dark:bg-[#131F1C] px-4 py-4">
+        <div className="border-b border-brand-500/15 dark:border-white/12 glass-strong px-4 py-4">
           <div className="max-w-3xl mx-auto space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <span className="text-xs font-semibold text-[#13201C] dark:text-[#ECF2EF]">
+              <span className="text-xs font-bold text-ink dark:text-ink-dark">
                 {t.player.ayahRepeat}
               </span>
               <div className="flex items-center gap-1.5">
@@ -315,10 +395,10 @@ export const ReaderView: React.FC = () => {
                     key={cnt}
                     type="button"
                     onClick={() => setAyahRepeatTarget(cnt)}
-                    className={`min-w-[40px] min-h-[36px] rounded-xl text-xs font-semibold tabular-nums ${
+                    className={`min-w-[44px] min-h-[40px] rounded-xl text-xs font-semibold tabular-nums ${
                       ayahRepeatTarget === cnt
-                        ? 'bg-[#0F5C4D] text-white dark:bg-[#4ECBA9] dark:text-[#081A15]'
-                        : 'bg-white dark:bg-[#1A2924] text-[#43544E] dark:text-[#A4B7B0]'
+                        ? 'bg-brand-600 text-white dark:bg-accent dark:text-brand-950'
+                        : 'glass text-muted dark:text-muted-dark'
                     }`}
                   >
                     {cnt}x
@@ -328,7 +408,7 @@ export const ReaderView: React.FC = () => {
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <label className="flex items-center gap-2 text-xs font-medium cursor-pointer min-h-[36px]">
+              <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer min-h-[40px]">
                 <input
                   type="checkbox"
                   checked={ayahRangeEnabled}
@@ -339,7 +419,7 @@ export const ReaderView: React.FC = () => {
                       Math.min(surah.numberOfAyahs, Math.max(ayahRangeEnd, ayahRangeStart))
                     )
                   }
-                  className="w-4 h-4 accent-[#0F5C4D]"
+                  className="w-4 h-4 accent-brand-600 dark:accent-accent"
                 />
                 <span>{t.player.rangeRepeat}</span>
               </label>
@@ -355,7 +435,7 @@ export const ReaderView: React.FC = () => {
                     const val = Math.max(1, Math.min(surah.numberOfAyahs, Number(e.target.value) || 1));
                     setAyahRange(ayahRangeEnabled, val, Math.max(val, ayahRangeEnd));
                   }}
-                  className="w-16 min-h-[36px] rounded-xl bg-white dark:bg-[#1A2924] px-2 text-center tabular-nums border border-black/10 dark:border-white/10"
+                  className="w-16 min-h-[40px] rounded-xl glass px-2 text-center tabular-nums"
                 />
                 <span>{t.player.toAyah}</span>
                 <input
@@ -367,16 +447,16 @@ export const ReaderView: React.FC = () => {
                     const val = Math.max(1, Math.min(surah.numberOfAyahs, Number(e.target.value) || 1));
                     setAyahRange(ayahRangeEnabled, Math.min(ayahRangeStart, val), val);
                   }}
-                  className="w-16 min-h-[36px] rounded-xl bg-white dark:bg-[#1A2924] px-2 text-center tabular-nums border border-black/10 dark:border-white/10"
+                  className="w-16 min-h-[40px] rounded-xl glass px-2 text-center tabular-nums"
                 />
               </div>
 
-              <label className="flex items-center gap-2 text-xs font-medium cursor-pointer min-h-[36px]">
+              <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer min-h-[40px]">
                 <input
                   type="checkbox"
                   checked={continueToNextAyah}
                   onChange={(e) => setContinueToNextAyah(e.target.checked)}
-                  className="w-4 h-4 accent-[#0F5C4D]"
+                  className="w-4 h-4 accent-brand-600 dark:accent-accent"
                 />
                 <span>{t.player.continueNext}</span>
               </label>
@@ -389,14 +469,14 @@ export const ReaderView: React.FC = () => {
       <main className="flex-1 overflow-y-auto px-4 pb-32 pt-5">
         <div className="max-w-3xl mx-auto">
           {/* Surah Banner Card */}
-          <div className="rounded-3xl bg-gradient-to-br from-[#0F5C4D] to-[#08352C] text-white p-6 text-center shadow-md mb-6">
-            <p className="font-quran-amiri text-3xl sm:text-4xl text-[#F4E6C3]" dir="rtl">
+          <div className="rounded-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-900 text-white p-6 text-center shadow-lg border border-white/15 mb-6">
+            <p className="font-quran-amiri text-3xl sm:text-4xl text-accent-200" dir="rtl">
               {surah.name}
             </p>
-            <p className="mt-1.5 text-sm font-medium text-white/90">
+            <p className="mt-1.5 text-sm font-semibold text-white/95">
               {surah.englishName} · {surah.englishNameTranslation}
             </p>
-            <p className="mt-1 text-xs text-white/75">
+            <p className="mt-1 text-xs text-white/80">
               {surah.revelationType === 'Meccan' ? t.home.meccan : t.home.medinan} ·{' '}
               {surah.numberOfAyahs} {t.home.ayahs}
             </p>
@@ -411,7 +491,7 @@ export const ReaderView: React.FC = () => {
                     audioManager.playSurah(surah.number, reciter.id, 0);
                   }
                 }}
-                className="md-ripple inline-flex items-center gap-2 px-5 min-h-[44px] rounded-2xl bg-[#E2B76B] text-[#111C18] text-xs font-semibold"
+                className="md-ripple inline-flex items-center gap-2 px-5 min-h-[48px] rounded-2xl bg-accent text-brand-950 text-xs font-bold shadow-sm"
               >
                 {isCurrentSurahPlaying && playMode === 'surah' ? (
                   <Pause className="w-4 h-4 fill-current" />
@@ -430,7 +510,7 @@ export const ReaderView: React.FC = () => {
                     reciter.id
                   )
                 }
-                className="md-ripple inline-flex items-center gap-2 px-5 min-h-[44px] rounded-2xl bg-white/15 hover:bg-white/20 text-white text-xs font-semibold"
+                className="md-ripple inline-flex items-center gap-2 px-5 min-h-[48px] rounded-2xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold backdrop-blur-md"
               >
                 <Volume2 className="w-4 h-4" />
                 <span>{t.player.ayahByAyah}</span>
@@ -439,9 +519,9 @@ export const ReaderView: React.FC = () => {
           </div>
 
           {/* Bismillah */}
-          {surah.number !== 1 && surah.number !== 9 && (
+          {surah.number !== 1 && surah.number !== 9 && settings.showArabic && (
             <p
-              className={`${fontClass} text-center text-2xl sm:text-3xl text-[#0F5C4D] dark:text-[#E2B76B] mb-6 leading-loose`}
+              className={`${fontClass} text-center text-2xl sm:text-3xl text-brand-700 dark:text-accent mb-6 leading-loose`}
               dir="rtl"
             >
               بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ
@@ -451,28 +531,25 @@ export const ReaderView: React.FC = () => {
           {loading && (
             <div className="space-y-4">
               {[1, 2, 3, 4].map((i) => (
-                <div
-                  key={i}
-                  className="rounded-2xl bg-white dark:bg-[#131F1C] p-5 animate-pulse space-y-3"
-                >
-                  <div className="h-7 bg-black/8 dark:bg-white/10 rounded-lg w-3/4 ms-auto" />
-                  <div className="h-4 bg-black/6 dark:bg-white/8 rounded-lg w-full" />
-                  <div className="h-4 bg-black/6 dark:bg-white/8 rounded-lg w-2/3" />
+                <div key={i} className="rounded-3xl glass p-5 animate-pulse space-y-3">
+                  <div className="h-7 bg-brand-900/10 dark:bg-white/12 rounded-lg w-3/4 ms-auto" />
+                  <div className="h-4 bg-brand-900/8 dark:bg-white/10 rounded-lg w-full" />
+                  <div className="h-4 bg-brand-900/8 dark:bg-white/10 rounded-lg w-2/3" />
                 </div>
               ))}
             </div>
           )}
 
           {error && !loading && (
-            <div className="rounded-3xl bg-white dark:bg-[#131F1C] p-8 text-center border border-black/8 dark:border-white/10">
-              <p className="text-sm text-[#43544E] dark:text-[#A4B7B0]">{error}</p>
+            <div className="rounded-3xl glass p-8 text-center">
+              <p className="text-sm text-muted dark:text-muted-dark">{error}</p>
               <button
                 type="button"
-                onClick={() => openReader(surah.number)}
-                className="mt-4 inline-flex items-center gap-2 px-4 min-h-[44px] rounded-2xl bg-[#0F5C4D] text-white dark:bg-[#4ECBA9] dark:text-[#081A15] text-sm font-medium"
+                onClick={() => setRetryCount((c) => c + 1)}
+                className="md-ripple mt-4 inline-flex items-center gap-2 px-5 min-h-[48px] rounded-2xl bg-brand-600 text-white dark:bg-accent dark:text-brand-950 text-sm font-semibold"
               >
                 <RotateCcw className="w-4 h-4" />
-                <span>{lang === 'ar' ? 'إعادة المحاولة' : 'Retry'}</span>
+                <span>{pickLang(lang, 'Retry', 'إعادة المحاولة', 'পুনরায় চেষ্টা করুন')}</span>
               </button>
             </div>
           )}
@@ -487,6 +564,7 @@ export const ReaderView: React.FC = () => {
 
                 const favId = `${surah.number}:${ayah.numberInSurah}`;
                 const isFavAyah = favoriteAyahs.some((a) => a.id === favId);
+                const bnText = banglaVerses?.[ayah.numberInSurah];
 
                 return (
                   <div
@@ -494,33 +572,46 @@ export const ReaderView: React.FC = () => {
                     ref={(el) => {
                       ayahRefs.current[ayah.numberInSurah] = el;
                     }}
-                    className={`rounded-2xl p-4 sm:p-5 transition-colors border ${
+                    className={`rounded-3xl p-4 sm:p-5 transition-colors border ${
                       isActiveAyah
-                        ? 'bg-[#0F5C4D]/8 dark:bg-[#4ECBA9]/12 border-[#0F5C4D]/35 dark:border-[#4ECBA9]/35'
-                        : 'bg-white dark:bg-[#131F1C] border-black/5 dark:border-white/8'
+                        ? 'bg-brand-600/12 dark:bg-accent/14 border-brand-500/45 dark:border-accent/45 shadow-md'
+                        : 'glass'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2 mb-3">
-                      <button
-                        type="button"
-                        onClick={() => audioManager.playAyah(surah.number, ayah.numberInSurah, reciter.id)}
-                        className={`md-ripple inline-flex items-center gap-2 px-3 min-h-[38px] rounded-xl text-xs font-semibold tabular-nums ${
-                          isActiveAyah
-                            ? 'bg-[#0F5C4D] text-white dark:bg-[#4ECBA9] dark:text-[#081A15]'
-                            : 'bg-[#EDF3F0] dark:bg-[#1B2B25] text-[#0F5C4D] dark:text-[#4ECBA9]'
-                        }`}
-                      >
-                        {isActiveAyah && isLoadingAudio ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : isActiveAyah && isPlaying ? (
-                          <Pause className="w-3.5 h-3.5 fill-current" />
-                        ) : (
-                          <Play className="w-3.5 h-3.5 fill-current" />
-                        )}
-                        <span>
-                          {surah.number}:{ayah.numberInSurah}
-                        </span>
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => audioManager.playAyah(surah.number, ayah.numberInSurah, reciter.id)}
+                          className={`md-ripple inline-flex items-center gap-2 px-3.5 min-h-[42px] rounded-2xl text-xs font-bold tabular-nums ${
+                            isActiveAyah
+                              ? 'bg-brand-600 text-white dark:bg-accent dark:text-brand-950'
+                              : 'bg-brand-600/12 dark:bg-white/10 text-brand-700 dark:text-accent'
+                          }`}
+                        >
+                          {isActiveAyah && isLoadingAudio ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : isActiveAyah && isPlaying ? (
+                            <Pause className="w-3.5 h-3.5 fill-current" />
+                          ) : (
+                            <Play className="w-3.5 h-3.5 fill-current" />
+                          )}
+                          <span>
+                            {surah.number}:{ayah.numberInSurah}
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openTafsirSheet(surah.number, ayah.numberInSurah, ayah.text)
+                          }
+                          className="md-ripple inline-flex items-center gap-1.5 px-3 min-h-[42px] rounded-2xl glass text-xs font-semibold text-brand-700 dark:text-accent hover:bg-brand-500/10 dark:hover:bg-white/12"
+                        >
+                          <BookText className="w-3.5 h-3.5" />
+                          <span>{t.tafsir.button}</span>
+                        </button>
+                      </div>
 
                       <button
                         type="button"
@@ -537,33 +628,45 @@ export const ReaderView: React.FC = () => {
                           })
                         }
                         aria-label="Favorite Ayah"
-                        className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10"
+                        className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full hover:bg-brand-500/10 dark:hover:bg-white/10"
                       >
                         <Heart
                           className={`w-4 h-4 ${
-                            isFavAyah
-                              ? 'fill-[#C69749] text-[#C69749]'
-                              : 'text-[#546660] dark:text-[#96ABA3]'
+                            isFavAyah ? 'fill-accent text-accent' : 'text-muted dark:text-muted-dark'
                           }`}
                         />
                       </button>
                     </div>
 
-                    <p
-                      dir="rtl"
-                      onClick={() =>
-                        audioManager.playAyah(surah.number, ayah.numberInSurah, reciter.id)
-                      }
-                      className={`${fontClass} text-right leading-[2.1] text-[#13201C] dark:text-[#F1F5F3] cursor-pointer select-text`}
-                      style={{fontSize: `${settings.arabicFontSize}px`}}
-                    >
-                      {ayah.text}
-                    </p>
+                    {settings.showArabic && (
+                      <p
+                        dir="rtl"
+                        onClick={() =>
+                          audioManager.playAyah(surah.number, ayah.numberInSurah, reciter.id)
+                        }
+                        className={`${fontClass} text-right leading-[2.1] text-ink dark:text-ink-dark cursor-pointer select-text`}
+                        style={{fontSize: `${settings.arabicFontSize}px`}}
+                      >
+                        {ayah.text}
+                      </p>
+                    )}
 
                     {settings.showTranslation && ayah.translation && (
-                      <p className="mt-3 text-sm sm:text-[15px] leading-relaxed text-[#43544E] dark:text-[#B4C6BF]">
+                      <p className="mt-3 text-sm sm:text-[15px] leading-relaxed text-muted dark:text-muted-dark">
                         {ayah.translation}
                       </p>
+                    )}
+
+                    {settings.showBanglaTranslation && (
+                      <div className="mt-3 pt-2.5 border-t border-brand-500/10 dark:border-white/10">
+                        {banglaLoading && !bnText ? (
+                          <div className="h-4 w-3/4 rounded bg-brand-900/10 dark:bg-white/10 animate-pulse" />
+                        ) : bnText ? (
+                          <p className="font-bengali text-sm sm:text-[15px] leading-relaxed text-ink/90 dark:text-ink-dark/90">
+                            {bnText}
+                          </p>
+                        ) : null}
+                      </div>
                     )}
                   </div>
                 );
@@ -575,19 +678,19 @@ export const ReaderView: React.FC = () => {
                   type="button"
                   disabled={surah.number <= 1}
                   onClick={() => openReader(surah.number - 1)}
-                  className="md-ripple inline-flex items-center gap-1.5 px-4 min-h-[44px] rounded-2xl bg-white dark:bg-[#131F1C] border border-black/10 dark:border-white/10 text-xs font-medium disabled:opacity-40"
+                  className="md-ripple inline-flex items-center gap-1.5 px-4 min-h-[48px] rounded-2xl glass text-xs font-semibold disabled:opacity-40"
                 >
                   <ChevronLeft className="w-4 h-4 rtl:rotate-180" />
-                  <span>{lang === 'ar' ? 'السورة السابقة' : 'Previous Surah'}</span>
+                  <span>{pickLang(lang, 'Previous Surah', 'السورة السابقة', 'পূর্ববর্তী সূরা')}</span>
                 </button>
 
                 <button
                   type="button"
                   disabled={surah.number >= 114}
                   onClick={() => openReader(surah.number + 1)}
-                  className="md-ripple inline-flex items-center gap-1.5 px-4 min-h-[44px] rounded-2xl bg-white dark:bg-[#131F1C] border border-black/10 dark:border-white/10 text-xs font-medium disabled:opacity-40"
+                  className="md-ripple inline-flex items-center gap-1.5 px-4 min-h-[48px] rounded-2xl glass text-xs font-semibold disabled:opacity-40"
                 >
-                  <span>{lang === 'ar' ? 'السورة التالية' : 'Next Surah'}</span>
+                  <span>{pickLang(lang, 'Next Surah', 'السورة التالية', 'পরবর্তী সূরা')}</span>
                   <ChevronRight className="w-4 h-4 rtl:rotate-180" />
                 </button>
               </div>
@@ -596,18 +699,16 @@ export const ReaderView: React.FC = () => {
         </div>
       </main>
 
-      {/* Bottom Compact Reader Playback Bar */}
-      <div
-        className="sticky bottom-0 z-20 bg-white/95 dark:bg-[#131F1C]/95 backdrop-blur-md border-t border-black/8 dark:border-white/10 px-4 py-2.5 pb-safe"
-      >
+      {/* Bottom Compact Reader Glass Playback Bar */}
+      <div className="sticky bottom-0 z-20 glass-nav border-t px-4 py-2.5 pb-safe">
         <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs font-semibold text-[#13201C] dark:text-[#ECF2EF] truncate">
+            <p className="text-xs font-semibold text-ink dark:text-ink-dark truncate">
               {lang === 'ar' ? reciter.nameAr : reciter.nameEn}
             </p>
-            <p className="text-[11px] text-[#546660] dark:text-[#96ABA3] truncate">
+            <p className="text-[11px] text-muted dark:text-muted-dark truncate">
               {playMode === 'ayah'
-                ? `${lang === 'ar' ? 'آية' : 'Ayah'} ${currentAyahNumber} · ${ayahRepeatTarget}x`
+                ? `${pickLang(lang, 'Ayah', 'آية', 'আয়াত')} ${currentAyahNumber} · ${ayahRepeatTarget}x`
                 : t.player.fullSurah}
             </p>
           </div>
@@ -617,7 +718,7 @@ export const ReaderView: React.FC = () => {
               type="button"
               onClick={() => setShowAyahControls((v) => !v)}
               aria-label="Ayah Repeat"
-              className="min-h-[44px] px-3 rounded-xl bg-[#EDF3F0] dark:bg-[#1B2B25] text-xs font-medium flex items-center gap-1.5"
+              className="min-h-[48px] px-3.5 rounded-2xl glass text-xs font-semibold flex items-center gap-1.5"
             >
               <Sliders className="w-3.5 h-3.5" />
               <span>{ayahRepeatTarget}x</span>
@@ -633,7 +734,7 @@ export const ReaderView: React.FC = () => {
                 }
               }}
               aria-label={isCurrentSurahPlaying ? 'Pause' : 'Play'}
-              className="md-ripple min-h-[44px] px-5 rounded-2xl bg-[#0F5C4D] text-white dark:bg-[#4ECBA9] dark:text-[#081A15] text-xs font-semibold flex items-center gap-2"
+              className="md-ripple min-h-[48px] px-5 rounded-2xl bg-brand-600 text-white dark:bg-accent dark:text-brand-950 text-xs font-semibold flex items-center gap-2 shadow-sm"
             >
               {isLoadingAudio && currentSurahNumber === surah.number ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -642,11 +743,18 @@ export const ReaderView: React.FC = () => {
               ) : (
                 <Play className="w-4 h-4 fill-current" />
               )}
-              <span>{isCurrentSurahPlaying ? (lang === 'ar' ? 'إيقاف' : 'Pause') : (lang === 'ar' ? 'استماع' : 'Listen')}</span>
+              <span>
+                {isCurrentSurahPlaying
+                  ? pickLang(lang, 'Pause', 'إيقاف', 'বিরতি')
+                  : pickLang(lang, 'Listen', 'استماع', 'শুনুন')}
+              </span>
             </button>
           </div>
         </div>
       </div>
+
+      {/* Tafsir Glass Bottom Sheet */}
+      <TafsirSheet />
     </div>
   );
 };

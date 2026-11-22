@@ -2,5 +2,5 @@
   "name": "Quranfy",
   "description": "Free Quran audio player and reader for study, work, and sleep with offline downloads, ambient soundscapes, and ayah-by-ayah listening.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": []
 }

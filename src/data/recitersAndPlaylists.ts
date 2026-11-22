@@ -260,7 +260,7 @@ export const MODE_CONFIG: Record<
     titleAr: string;
     subtitleEn: string;
     subtitleAr: string;
-    defaultAmbient: 'rain' | 'forest' | 'night';
+    defaultAmbient: 'soft-rain' | 'forest-birds' | 'night-crickets';
     recommendedSpeed: number;
   }
 > = {
@@ -269,7 +269,7 @@ export const MODE_CONFIG: Record<
     titleAr: 'الدراسة',
     subtitleEn: 'Crisp recitation, ayah repeat & reading focus',
     subtitleAr: 'تلاوة واضحة وتكرار للآيات للتركيز والحفظ',
-    defaultAmbient: 'rain',
+    defaultAmbient: 'soft-rain',
     recommendedSpeed: 1,
   },
   work: {
@@ -277,7 +277,7 @@ export const MODE_CONFIG: Record<
     titleAr: 'العمل',
     subtitleEn: 'Steady background flow for deep productivity',
     subtitleAr: 'إيقاع متزن يرافق جلسات العمل والإنتاجية',
-    defaultAmbient: 'forest',
+    defaultAmbient: 'forest-birds',
     recommendedSpeed: 1,
   },
   sleep: {
@@ -285,7 +285,7 @@ export const MODE_CONFIG: Record<
     titleAr: 'النوم',
     subtitleEn: 'Dimmed nocturnal UI, slow pace & gentle fade-out',
     subtitleAr: 'واجهة داكنة هادئة وتلاوة بطيئة مع تلاشي تلقائي',
-    defaultAmbient: 'night',
+    defaultAmbient: 'night-crickets',
     recommendedSpeed: 0.9,
   },
 };
